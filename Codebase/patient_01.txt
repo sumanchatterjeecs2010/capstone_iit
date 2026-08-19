@@ -1,4 +1,4 @@
-PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)
+PATIENT DETAILS / PRESCRIPTION (fictional teaching case)
 Case ID: patient_01
 Age/Sex: 62-year-old male
 Chief complaint: Productive cough, fever 38.6 C, and dyspnoea for 4 days.
@@ -9,3 +9,4 @@ Current medicines: Metformin 500 mg twice daily.
 Requested study: Chest radiograph (PA).
 Clinical question: Community-acquired pneumonia versus heart failure.
 Plan requested: Correlate image with symptoms and advise triage / next steps.
+Image source: public teaching radiograph (see IMAGE_SOURCES.txt).

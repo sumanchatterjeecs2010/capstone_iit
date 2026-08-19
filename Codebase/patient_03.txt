@@ -1,4 +1,4 @@
-PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)
+PATIENT DETAILS / PRESCRIPTION (fictional teaching case)
 Case ID: patient_03
 Age/Sex: 71-year-old male
 Chief complaint: Sudden right-sided weakness and speech difficulty for 40 minutes.
@@ -9,3 +9,4 @@ Current medicines: Amlodipine 5 mg daily.
 Requested study: Non-contrast CT brain.
 Clinical question: Acute stroke. Haemorrhage versus ischaemia.
 Plan requested: Urgent image-text correlation and emergency triage.
+Image source: public teaching CT (see IMAGE_SOURCES.txt).

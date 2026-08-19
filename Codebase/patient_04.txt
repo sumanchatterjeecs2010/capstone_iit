@@ -1,4 +1,4 @@
-PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)
+PATIENT DETAILS / PRESCRIPTION (fictional teaching case)
 Case ID: patient_04
 Age/Sex: 58-year-old female
 Chief complaint: Gradual blurring of vision in both eyes for 6 months.
@@ -9,3 +9,4 @@ Current medicines: Insulin, ramipril, atorvastatin.
 Requested study: Fundus photograph (left eye).
 Clinical question: Diabetic retinopathy screening / grading support.
 Plan requested: Correlate fundus appearance with diabetic history.
+Image source: public teaching fundus photograph (see IMAGE_SOURCES.txt).

@@ -1,4 +1,4 @@
-PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)
+PATIENT DETAILS / PRESCRIPTION (fictional teaching case)
 Case ID: patient_02
 Age/Sex: 47-year-old female
 Chief complaint: Changing dark mole on the left forearm for 3 months.
@@ -9,3 +9,4 @@ Current medicines: None.
 Requested study: Clinical photograph of the lesion.
 Clinical question: Suspicious pigmented lesion. Need risk stratification.
 Plan requested: Correlate image with history and recommend dermatology pathway.
+Image source: public teaching photograph (see IMAGE_SOURCES.txt).

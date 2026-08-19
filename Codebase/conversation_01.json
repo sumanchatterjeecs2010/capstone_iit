@@ -1,141 +1,32 @@
 {
   "case_id": "patient_01",
   "input": {
-    "image": "patient_01.png",
+    "image": "patient_01.jpg",
     "prescription": "patient_01.txt"
   },
   "visual_analysis": {
-    "file_name": "patient_01.png",
+    "file_name": "patient_01.jpg",
     "inferred_modality": "chest_xray",
-    "features": {
-      "width": 256,
-      "height": 256,
-      "mostly_grayscale": true,
-      "mean_brightness": 53.5743408203125,
-      "contrast": 43.19446147657161,
-      "edge_density": 0.0174102783203125,
-      "circularity": 0.6967682708049183,
-      "left_right_asymmetry": 3.1025390625,
-      "bright_pixel_ratio": 0.0,
-      "dark_pixel_ratio": 0.5702667236328125,
-      "intensity_histogram_8bin": [
-        0.5587,
-        0.0608,
-        0.0492,
-        0.3309,
-        0.0004,
-        0.0,
-        0.0,
-        0.0
-      ]
-    },
+    "image_description": "PA chest radiograph of a male patient.",
     "visual_findings": [
-      "Grayscale projection consistent with a chest radiograph.",
-      "Quantitative cues: brightness=53.6, contrast=43.2, edges=0.017, asymmetry=3.1.",
-      "pulmonary edema (image=0.00, note=0.72, fused=0.43)",
-      "pneumonia / consolidation (image=0.00, note=0.70, fused=0.42)",
-      "normal fundus (image=0.22, note=0.54, fused=0.41)",
-      "normal brain CT (image=0.11, note=0.56, fused=0.38)",
-      "BioBERT+CLIP findings for chest xray: pulmonary edema; pneumonia / consolidation; normal chest radiograph."
+      "Right lower lobe opacity",
+      "Cardiomegaly",
+      "Normal mediastinum",
+      "No pleural effusion"
     ],
-    "method": "OpenCV + pubmedclip + BioBERT",
-    "opencv_modality": "chest_xray",
-    "encoder_modality": "fundus",
-    "fused_findings": [
-      {
-        "id": "edema",
-        "label": "pulmonary edema",
-        "modality": "chest_xray",
-        "prompt": "a chest X-ray showing pulmonary edema or congestive heart failure",
-        "image_score": 0.0025,
-        "note_score": 0.7166,
-        "fused_score": 0.431,
-        "agreement": false
-      },
-      {
-        "id": "pna",
-        "label": "pneumonia / consolidation",
-        "modality": "chest_xray",
-        "prompt": "a chest X-ray showing pneumonia, infiltrate or pulmonary consolidation",
-        "image_score": 0.0015,
-        "note_score": 0.696,
-        "fused_score": 0.4182,
-        "agreement": false
-      },
-      {
-        "id": "normal_cxr",
-        "label": "normal chest radiograph",
-        "modality": "chest_xray",
-        "prompt": "a normal chest radiograph without consolidation",
-        "image_score": 0.009,
-        "note_score": 0.6255,
-        "fused_score": 0.3789,
-        "agreement": false
-      }
+    "likely_conditions": [
+      "Pneumonia",
+      "Heart failure"
     ],
-    "modality_scores": [
-      {
-        "id": "mod_fundus",
-        "label": "retinal fundus photograph",
-        "modality": "fundus",
-        "prompt": "a colour retinal fundus photograph of the eye",
-        "image_score": 0.3537,
-        "note_score": 0.5748,
-        "fused_score": 0.4863,
-        "agreement": true
-      },
-      {
-        "id": "mod_chest",
-        "label": "chest radiograph",
-        "modality": "chest_xray",
-        "prompt": "a frontal chest radiograph of the lungs",
-        "image_score": 0.0161,
-        "note_score": 0.6482,
-        "fused_score": 0.3954,
-        "agreement": false
-      },
-      {
-        "id": "mod_brain",
-        "label": "brain CT",
-        "modality": "brain_ct",
-        "prompt": "an axial CT scan of the brain",
-        "image_score": 0.0993,
-        "note_score": 0.5927,
-        "fused_score": 0.3953,
-        "agreement": true
-      },
-      {
-        "id": "mod_bone",
-        "label": "extremity radiograph",
-        "modality": "bone_xray",
-        "prompt": "a radiograph of the wrist and distal radius",
-        "image_score": 0.0175,
-        "note_score": 0.5894,
-        "fused_score": 0.3607,
-        "agreement": false
-      },
-      {
-        "id": "mod_skin",
-        "label": "dermatology photograph",
-        "modality": "dermatology_photo",
-        "prompt": "a close-up clinical photograph of a skin lesion",
-        "image_score": 0.0077,
-        "note_score": 0.5928,
-        "fused_score": 0.3587,
-        "agreement": false
-      }
+    "image_note_correlation": "The image shows right lower lobe consolidation, which is consistent with pneumonia. The patient has a productive cough and fever.",
+    "uncertainties": [
+      "Differentiating between pneumonia and heart failure based on chest radiograph alone can be challenging."
     ],
-    "fusion_summary": "After locking modality to chest_xray, ranked findings are: pulmonary edema (0.43); pneumonia / consolidation (0.42); normal chest radiograph (0.38).",
-    "vision_backend": "pubmedclip",
-    "text_backend": "biobert",
-    "text_requested_modality": "chest_xray",
-    "image_only_modality": "chest_xray",
-    "retrieved_findings": [
-      "pulmonary edema (fused=0.43, image=0.00, note=0.72)",
-      "pneumonia / consolidation (fused=0.42, image=0.00, note=0.70)",
-      "normal chest radiograph (fused=0.38, image=0.01, note=0.63)"
-    ],
-    "langchain_retriever": "CrossModalFindingRetriever"
+    "image_is_synthetic_or_schematic": false,
+    "method": "MedGemma vision LLM",
+    "parser": "medgemma",
+    "raw_model_output": "{\n  \"inferred_modality\": \"chest_xray\",\n  \"image_description\": \"PA chest radiograph of a male patient.\",\n  \"visual_findings\": [\n    \"Right lower lobe opacity\",\n    \"Cardiomegaly\",\n    \"Normal mediastinum\",\n    \"No pleural effusion\"\n  ],\n  \"image_note_correlation\": \"The image shows right lower lobe consolidation, which is consistent with pneumonia. The patient has a productive cough and fever.\",\n  \"likely_conditions\": [\n    \"Pneumonia\",\n    \"Heart failure\"\n  ],\n  \"uncertainties\": [\n    \"Differentiating between pneumonia and heart failure based on chest radiograph alone can be challenging.\"\n  ],\n  \"image_is_synthetic_or_schematic\": false\n}",
+    "vision_llm": "medgemma:4b"
   },
   "extracted_entities": {
     "age_sex": "see note",
@@ -146,50 +37,52 @@
     "medications": "see note",
     "requested_study": "see note",
     "clinical_question": "see note",
-    "raw_note": "PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)\nCase ID: patient_01\nAge/Sex: 62-year-old male\nChief complaint: Productive cough, fever 38.6 C, and dyspnoea for 4 days.\nHistory: Type 2 diabetes mellitus, former smoker (20 pack-years).\nVitals: HR 108, RR 24, SpO2 91% on room air, BP 138/84 mmHg.\nExam: Right basal crepitations, no wheeze.\nCurrent medicines: Metformin 500 mg twice daily.\nRequested study: Chest radiograph (PA).\nClinical question: Community-acquired pneumonia versus heart failure.\nPlan requested: Correlate image with symptoms and advise triage / next steps.",
     "parser": "llama",
-    "raw_model_output": "{\"patient_01\": {\n  \"age_sex\": \"62-year-old male\",\n  \"chief_complaint\": \"Productive cough, fever 38.6 C, and dyspnoea for 4 days\",\n  \"history\": \"Type 2 diabetes mellitus, former smoker (20 pack-years)\",\n  \"vitals\": \"HR 108, RR 24, SpO2 91% on room air, BP 138/84 mmHg\",\n  \"exam\": \"Right basal crepitations, no wheeze\",\n  \"medications\": \"Metformin 500 mg twice daily\",\n  \"requested_study\": \"Chest radiograph (PA)\",\n  \"clinical_question\": \"Community-acquired pneumonia versus heart failure\"\n}}"
+    "raw_model_output": "{\n  \"patient_01\": {\n    \"age_sex\": \"62-year-old male\",\n    \"chief_complaint\": \"Productive cough, fever 38.6 C, and dyspnoea for 4 days.\",\n    \"history\": \"Type 2 diabetes mellitus, former smoker (20 pack-years)\",\n    \"vitals\": \"HR 108, RR 24, SpO2 91% on room air, BP 138/84 mmHg\",\n    \"exam\": \"Right basal crepitations, no wheeze\",\n    \"medications\": \"Metformin 500 mg twice daily\",\n    \"requested_study\": \"Chest radiograph (PA)\",\n    \"clinical_question\": \"Community-acquired pneumonia versus heart failure\"\n  }\n}"
   },
   "clinical_reasoning": {
-    "impression": "Pulmonary edema and pneumonia/consolidation suspected",
+    "impression": "Right lower lobe consolidation consistent with pneumonia, cardiomegaly present.",
     "differential": [
-      "Pulmonary edema",
-      "Pneumonia/consolidation",
-      "Community-acquired pneumonia",
+      "Pneumonia",
       "Heart failure"
     ],
     "triage": "urgent",
-    "triage_rationale": "Pulmonary edema and pneumonia/consolidation suspected, with symptoms of fever, productive cough, and dyspnea, and abnormal vitals (HR 108, RR 24, SpO2 91% on room air).",
+    "triage_rationale": "Right lower lobe opacity and cardiomegaly suggest pneumonia, which requires prompt evaluation and treatment.",
     "recommendations": [
-      "Order oxygen therapy and monitor SpO2 closely",
-      "Prescribe antibiotics for pneumonia/consolidation",
-      "Consider further diagnostic testing (e.g. echocardiogram) for pulmonary edema"
+      "Oxygen therapy for hypoxia (SpO2 91%)",
+      "Antibiotics for suspected pneumonia",
+      "Cardiac evaluation for heart failure"
     ],
     "follow_up_questions": [
-      "What is the patient's oxygen saturation on room air?",
-      "Have the patient's symptoms worsened or improved since the last assessment?",
-      "Are there any concerns about the patient's cardiac status?"
+      "Patient's fever and productive cough duration",
+      "Heart rate and rhythm on ECG",
+      "Lung exam for worsening consolidation"
     ],
-    "image_text_correlation": "The image shows a chest radiograph with bilateral infiltrates and a large amount of alveolar edema, consistent with pulmonary edema and pneumonia/consolidation.",
+    "image_text_correlation": "The image shows right lower lobe consolidation, which is consistent with pneumonia. The patient has a productive cough and fever.",
     "safety_flags": [
-      "Monitor the patient's respiratory status closely for signs of worsening edema or pneumonia",
-      "Be aware of the risk of cardiac complications in patients with pulmonary edema",
-      "Consider the patient's history of type 2 diabetes mellitus and former smoking status when managing their condition"
+      "Hypoxia (SpO2 91%)",
+      "Cardiac evaluation required for heart failure"
     ],
     "parser": "llama",
-    "raw_note_excerpt": "PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)\nCase ID: patient_01\nAge/Sex: 62-year-old male\nChief complaint: Productive cough, fever 38.6 C, and dyspnoea for 4 days.\nHistory: Type 2 diabetes mellitus, former smoker (20 pack-year",
-    "raw_model_output": "{\n  \"impression\": \"Pulmonary edema and pneumonia/consolidation suspected\",\n  \"differential\": [\n    \"Pulmonary edema\",\n    \"Pneumonia/consolidation\",\n    \"Community-acquired pneumonia\",\n    \"Heart failure\"\n  ],\n  \"triage\": \"urgent\",\n  \"triage_rationale\": \"Pulmonary edema and pneumonia/consolidation suspected, with symptoms of fever, productive cough, and dyspnea, and abnormal vitals (HR 108, RR 24, SpO2 91% on room air).\",\n  \"recommendations\": [\n    \"Order oxygen therapy and monitor SpO2 closely\",\n    \"Prescribe antibiotics for pneumonia/consolidation\",\n    \"Consider further diagnostic testing (e.g. echocardiogram) for pulmonary edema\"\n  ],\n  \"follow_up_questions\": [\n    \"What is the patient's oxygen saturation on room air?\",\n    \"Have the patient's symptoms worsened or improved since the last assessment?\",\n    \"Are there any concerns about the patient's cardiac status?\"\n  ],\n  \"image_text_correlation\": \"The image shows a chest radiograph with bilateral infiltrates and a large amount of alveolar edema, consistent with pulmonary edema and pneumonia/consolidation.\",\n  \"safety_flags\": [\n    \"Monitor the patient's respiratory status closely for signs of worsening edema or pneumonia\",\n    \"Be aware of the risk of cardiac complications in patients with pulmonary edema\",\n    \"Consider the patient's history of type 2 diabetes mellitus and former smoking status when managing their condition\"\n  ]\n}",
+    "raw_note_excerpt": "PATIENT DETAILS / PRESCRIPTION (fictional teaching case)\nCase ID: patient_01\nAge/Sex: 62-year-old male\nChief complaint: Productive cough, fever 38.6 C, and dyspnoea for 4 days.\nHistory: Type 2 diabetes mellitus, former smoker (20 pack-years",
+    "visual_cues": [
+      "Right lower lobe opacity",
+      "Cardiomegaly",
+      "Normal mediastinum",
+      "No pleural effusion"
+    ],
+    "raw_model_output": "{\n  \"impression\": \"Right lower lobe consolidation consistent with pneumonia, cardiomegaly present.\",\n  \"differential\": [\n    \"Pneumonia\",\n    \"Heart failure\"\n  ],\n  \"triage\": \"urgent\",\n  \"triage_rationale\": \"Right lower lobe opacity and cardiomegaly suggest pneumonia, which requires prompt evaluation and treatment.\",\n  \"recommendations\": [\n    \"Oxygen therapy for hypoxia (SpO2 91%)\",\n    \"Antibiotics for suspected pneumonia\",\n    \"Cardiac evaluation for heart failure\"\n  ],\n  \"follow_up_questions\": [\n    \"Patient's fever and productive cough duration\",\n    \"Heart rate and rhythm on ECG\",\n    \"Lung exam for worsening consolidation\"\n  ],\n  \"image_text_correlation\": \"The image shows right lower lobe consolidation, which is consistent with pneumonia. The patient has a productive cough and fever.\",\n  \"safety_flags\": [\n    \"Hypoxia (SpO2 91%)\",\n    \"Cardiac evaluation required for heart failure\"\n  ]\n}",
     "llm_triage": "urgent",
     "triage_calibration": "Respiratory infection features with hypoxia or fever."
   },
   "conversation": [
     {
       "role": "clinician",
-      "content": "I am uploading a medical image (patient_01.png) with this patient note:\nPATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)\nCase ID: patient_01\nAge/Sex: 62-year-old male\nChief complaint: Productive cough, fever 38.6 C, and dyspnoea for 4 days.\nHistory: Type 2 diabetes mellitus, former smoker (20 pack-years).\nVitals: HR 108, RR 24, SpO2 91% on room air, BP 138/84 mmHg.\nExam: Right basal crepitations, no wheeze.\nCurrent medicines: Metformin 500 mg twice daily.\nRequested study: Chest radiograph (PA).\nClinical question: Community-acquired pneumonia versus heart failure.\nPlan requested: Correlate image with symptoms and advise triage / next steps."
+      "content": "I am uploading a medical image (patient_01.jpg) with this patient note:\nPATIENT DETAILS / PRESCRIPTION (fictional teaching case)\nCase ID: patient_01\nAge/Sex: 62-year-old male\nChief complaint: Productive cough, fever 38.6 C, and dyspnoea for 4 days.\nHistory: Type 2 diabetes mellitus, former smoker (20 pack-years).\nVitals: HR 108, RR 24, SpO2 91% on room air, BP 138/84 mmHg.\nExam: Right basal crepitations, no wheeze.\nCurrent medicines: Metformin 500 mg twice daily.\nRequested study: Chest radiograph (PA).\nClinical question: Community-acquired pneumonia versus heart failure.\nPlan requested: Correlate image with symptoms and advise triage / next steps.\nImage source: public teaching radiograph (see IMAGE_SOURCES.txt)."
     },
     {
       "role": "assistant",
-      "content": "The patient is a 62-year-old male presenting with symptoms that suggest pulmonary edema and pneumonia/consolidation. The clinical impression is that the patient has these conditions, and the differential diagnosis includes pulmonary edema, pneumonia/consolidation, community-acquired pneumonia, and heart failure. The recommendations include ordering oxygen therapy, prescribing antibiotics, and considering further diagnostic testing. \n\nCorrelating the BiomedCLIP image findings with the note, the image shows a chest radiograph with bilateral infiltrates and a large amount of alveolar edema, consistent with the clinical impression.\n\nThis is an educational exercise and not clinical advice. Please consult with a qualified healthcare professional for patient care. Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings."
+      "content": "The patient is a 62-year-old male who presents with symptoms of pneumonia. The chest X-ray shows right lower lobe opacity and cardiomegaly, which are consistent with pneumonia and heart failure, respectively. There is no pleural effusion. The clinical question was to identify the cause of the patient's symptoms.\n\nMedGemma reviewed the image with the note.\n\nPlease note that this summary is for educational purposes only and should not be used as clinical advice. It is essential to consider the entire clinical context and perform a thorough evaluation before making any decisions about patient care. Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings."
     },
     {
       "role": "clinician",
@@ -197,7 +90,7 @@
     },
     {
       "role": "assistant",
-      "content": "Interpretation:\n\nThe chest X-ray shows bilateral infiltrates and a large amount of alveolar edema, consistent with pulmonary edema and pneumonia/consolidation. The fused findings suggest a moderate agreement between the radiologist's interpretation and the clinical notes. The clinical notes mention a 62-year-old male with a history of heart failure, which may contribute to the pulmonary edema. The differential diagnosis includes pulmonary edema, pneumonia/consolidation, and heart failure. The recommendations include oxygen therapy, antibiotics for pneumonia/consolidation, and further diagnostic testing for pulmonary edema.\n\nThis interpretation is for educational purposes only and should not be used for clinical decision-making without further evaluation and discussion with the patient's healthcare team. Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings."
+      "content": "Cautious multimodal interpretation:\n\nThe chest X-ray reveals right lower lobe opacity, suggesting pneumonia, and cardiomegaly (enlarged heart). The normal mediastinum and absence of pleural effusion support this diagnosis. The clinical context is a 62-year-old male with symptoms consistent with pneumonia. Antibiotics are recommended for suspected pneumonia, while oxygen therapy addresses hypoxia. Cardiac evaluation is warranted due to cardiomegaly.\n\nThis interpretation should be used in conjunction with the patient's clinical presentation and other diagnostic information.\n\n**Please note that this is an educational exercise only and not a substitute for clinical judgment or professional advice. Always consult multiple sources and consider individual patient factors when making medical decisions.** Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings."
     },
     {
       "role": "clinician",
@@ -205,31 +98,30 @@
     },
     {
       "role": "assistant",
-      "content": "**Triage:** Urgent\n\n**Rationale:** The patient's chest X-ray shows bilateral infiltrates and a large amount of alveolar edema, consistent with pulmonary edema and pneumonia/consolidation. The clinical question is \"Pulmonary edema and pneumonia/consolidation suspected\". The differential diagnosis includes pulmonary edema, pneumonia/consolidation, community-acquired pneumonia, and heart failure.\n\n**Next Steps:** Order oxygen therapy and monitor SpO2 closely, prescribe antibiotics for pneumonia/consolidation, and consider further diagnostic testing (e.g. echocardiogram) for pulmonary edema.\n\n**Follow-up Questions:**\n1. What is the patient's current oxygen saturation level?\n2. Are there any other symptoms or signs that may be related to pulmonary edema or pneumonia/consolidation? Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings."
+      "content": "**Triage:** Urgent\n**Rationale:** This patient presents with suspected pneumonia (right lower lobe consolidation) and cardiomegaly, which warrants immediate attention to prevent complications.\n\n**Next Steps:**\n- Administer oxygen therapy for hypoxia.\n- Prescribe antibiotics for suspected pneumonia.\n- Schedule a cardiac evaluation for heart failure.\n\n**Follow-up Questions:**\n\n1. What are the next steps for addressing the patient's fever and productive cough?\n2. How will you monitor the patient's oxygen saturation levels post-oxygen therapy? Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings."
     },
     {
       "role": "clinician",
-      "content": "What is the patient's oxygen saturation on room air?"
+      "content": "Patient's fever and productive cough duration"
     },
     {
       "role": "assistant",
-      "content": "The patient's oxygen saturation on room air is not provided in the given information. The clinical question and requested study do not mention oxygen saturation, and the entities section only mentions the patient's age, sex, vitals, requested study, and clinical question. The triage and recommendations do not provide any information about oxygen saturation. To answer this question, the clinician would need to assess the patient's oxygen saturation through further clinical evaluation. This is an educational response, not clinical advice. Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings."
+      "content": "According to the available information, the patient's fever and productive cough duration are not specified. The clinical question mentions a \"productive cough\" but does not provide details on its duration. Additionally, there is no mention of the patient's temperature or any specific time frame for the symptoms. To answer this follow-up question accurately, a clinical assessment would be necessary to determine the duration of the fever and productive cough.\n\nThis educational content is intended to provide general information and should not be considered as clinical advice. Please consult with a qualified healthcare professional for personalized guidance. Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings."
     }
   ],
   "disclaimer": "Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings.",
   "models": {
+    "vision_llm": "medgemma:4b",
     "language_model": "llama3.2:3b",
-    "vision_encoder": "pubmedclip",
-    "text_encoder": "biobert",
-    "orchestrator": "langchain"
+    "orchestrator": "langgraph"
   },
-  "elapsed_seconds": 239.34,
+  "elapsed_seconds": 816.36,
   "evaluation": {
     "case_id": 1,
     "keyword_recall": 0.833,
     "keywords_found": [
       "pneumonia",
-      "infiltrate",
+      "opacity",
       "consolidation",
       "respiratory",
       "chest"

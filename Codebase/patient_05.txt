@@ -1,4 +1,4 @@
-PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)
+PATIENT DETAILS / PRESCRIPTION (fictional teaching case)
 Case ID: patient_05
 Age/Sex: 29-year-old male
 Chief complaint: Pain and swelling of the left wrist after a FOOSH fall.
@@ -9,3 +9,4 @@ Current medicines: None. Last tetanus unknown.
 Requested study: Left wrist radiograph.
 Clinical question: Distal radius or scaphoid fracture.
 Plan requested: Correlate radiograph with trauma history and advise care.
+Image source: public teaching radiograph (see IMAGE_SOURCES.txt).

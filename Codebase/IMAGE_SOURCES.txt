@@ -1,0 +1,8 @@
+Public teaching images used by this project.
+Notes in patient_XX.txt are fictional. Do not treat them as the original patients.
+
+patient_01: X-ray_of_lobar_pneumonia.jpg | CC BY-SA 4.0 | Mikael Haggstrom, M.D., Wikimedia Commons, File:X-ray of lobar pneumonia.jpg
+patient_02: Melanoma.jpg | Public domain (NCI) | National Cancer Institute via Wikimedia Commons, File:Melanoma.jpg
+patient_03: Intracerebral.jpg | CC BY-SA 3.0 | Lucien Monfils, Wikimedia Commons, File:Intracerebral.jpg
+patient_04: Fundus_retinopathy_EDA03.JPG | Public domain (NIH/NEI) | National Eye Institute, NIH, Wikimedia Commons, File:Fundus retinopathy EDA03.JPG
+patient_05: Collesfracture.jpg | CC BY-SA 3.0 | Wikimedia Commons, File:Collesfracture.jpg

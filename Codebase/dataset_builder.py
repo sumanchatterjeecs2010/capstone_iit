@@ -1,27 +1,62 @@
 """
 dataset_builder.py
 ------------------
-Creates the five synthetic (de-identified) multimodal input pairs required
-by HPPCS[04]: one medical image and one matching prescription / patient-detail
-text file per case.
+Five public teaching images plus fictional, de-identified notes.
 
-All images are procedurally generated. No real patient data is used.
+Images are downloaded from Wikimedia Commons / NIH public collections.
+They are real clinical photographs and radiographs published for education.
+The accompanying notes are invented teaching cases (not real patient records).
+
+No OpenCV or Pillow is used.
 """
 
 import os
 
-import cv2
-import numpy as np
+import requests
 
 
-# Directory that contains this file (Codebase/). All paths stay local ("./").
 ROOT = os.path.dirname(os.path.abspath(__file__))
-
-# Number of cases required by the project specification.
 NUM_CASES = 5
 
-# Expected clinical cues used later for lightweight keyword evaluation.
-# These labels are known because the images and notes are synthetic.
+USER_AGENT = (
+    "HPPCS04-MultimodalAssistant/1.0 "
+    "(educational capstone; https://github.com/sumanchatterjeecs2010/capstone_iit)"
+)
+
+# Wikimedia Special:FilePath follows the current stored file.
+CASES = {
+    1: {
+        "filename": "X-ray_of_lobar_pneumonia.jpg",
+        "dest": "patient_01.jpg",
+        "license": "CC BY-SA 4.0",
+        "credit": "Mikael Haggstrom, M.D., Wikimedia Commons, File:X-ray of lobar pneumonia.jpg",
+    },
+    2: {
+        "filename": "Melanoma.jpg",
+        "dest": "patient_02.jpg",
+        "license": "Public domain (NCI)",
+        "credit": "National Cancer Institute via Wikimedia Commons, File:Melanoma.jpg",
+    },
+    3: {
+        "filename": "Intracerebral.jpg",
+        "dest": "patient_03.jpg",
+        "license": "CC BY-SA 3.0",
+        "credit": "Lucien Monfils, Wikimedia Commons, File:Intracerebral.jpg",
+    },
+    4: {
+        "filename": "Fundus_retinopathy_EDA03.JPG",
+        "dest": "patient_04.jpg",
+        "license": "Public domain (NIH/NEI)",
+        "credit": "National Eye Institute, NIH, Wikimedia Commons, File:Fundus retinopathy EDA03.JPG",
+    },
+    5: {
+        "filename": "Collesfracture.jpg",
+        "dest": "patient_05.jpg",
+        "license": "CC BY-SA 3.0",
+        "credit": "Wikimedia Commons, File:Collesfracture.jpg",
+    },
+}
+
 GROUND_TRUTH = {
     1: {
         "modality": "chest_xray",
@@ -87,181 +122,66 @@ GROUND_TRUTH = {
 
 
 def _case_paths(case_id):
-    """
-    Return the image and text filenames for a given case number.
-
-    Parameters
-    ----------
-    case_id : int
-        Case index from 1 to 5.
-
-    Returns
-    -------
-    tuple[str, str]
-        Absolute paths of the PNG image and TXT prescription file.
-    """
-    image_path = os.path.join(ROOT, "patient_{:02d}.png".format(case_id))
+    """Return image and note paths for a case, finding the downloaded image file."""
     text_path = os.path.join(ROOT, "patient_{:02d}.txt".format(case_id))
-    return image_path, text_path
+    planned = os.path.join(ROOT, CASES[case_id]["dest"])
+    if os.path.exists(planned):
+        return planned, text_path
+    for ext in (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG"):
+        candidate = os.path.join(ROOT, "patient_{:02d}{}".format(case_id, ext))
+        if os.path.exists(candidate):
+            return candidate, text_path
+    return planned, text_path
 
 
-def _add_gaussian_noise(image, sigma):
-    """
-    Add light Gaussian noise so synthetic images look less cartoon-like.
-
-    Parameters
-    ----------
-    image : numpy.ndarray
-        Input image (uint8).
-    sigma : float
-        Standard deviation of the noise.
-
-    Returns
-    -------
-    numpy.ndarray
-        Noisy image clipped to the valid 0-255 range.
-    """
-    noise = np.random.normal(0, sigma, image.shape)
-    noisy = np.clip(image.astype(np.float32) + noise, 0, 255)
-    return noisy.astype(np.uint8)
-
-
-def build_chest_xray():
-    """
-    Build a synthetic frontal chest radiograph with a right-sided opacity.
-
-    Returns
-    -------
-    numpy.ndarray
-        Grayscale PNG-ready image (256 x 256).
-    """
-    img = np.zeros((256, 256), dtype=np.uint8)
-    img[:] = 18
-    # Soft tissue / mediastinum
-    cv2.ellipse(img, (128, 140), (42, 70), 0, 0, 360, 70, -1)
-    # Lung fields
-    cv2.ellipse(img, (78, 130), (50, 78), 0, 0, 360, 110, -1)
-    cv2.ellipse(img, (178, 130), (50, 78), 0, 0, 360, 110, -1)
-    # Rib-like arcs
-    for i, y in enumerate(range(60, 200, 16)):
-        cv2.ellipse(img, (128, y), (92, 18 + i), 0, 200, 340, 150, 1)
-    # Simulated right lower-zone consolidation (opacity)
-    cv2.ellipse(img, (175, 175), (28, 22), 15, 0, 360, 55, -1)
-    cv2.GaussianBlur(img, (9, 9), 0, img)
-    return _add_gaussian_noise(img, 4)
+def _download_image(case_id, overwrite=False):
+    """Download one Wikimedia Commons file into Codebase/."""
+    meta = CASES[case_id]
+    dest = os.path.join(ROOT, meta["dest"])
+    if os.path.exists(dest) and not overwrite:
+        return dest
+    url = "https://commons.wikimedia.org/wiki/Special:FilePath/{}?width=768".format(
+        meta["filename"]
+    )
+    response = requests.get(
+        url,
+        headers={"User-Agent": USER_AGENT},
+        timeout=90,
+        allow_redirects=True,
+    )
+    response.raise_for_status()
+    content_type = (response.headers.get("Content-Type") or "").lower()
+    if "html" in content_type or len(response.content) < 2000:
+        raise RuntimeError("Download did not return an image for {}".format(meta["filename"]))
+    with open(dest, "wb") as handle:
+        handle.write(response.content)
+    return dest
 
 
-def build_skin_lesion():
-    """
-    Build a synthetic close-up photograph of an irregular pigmented lesion.
-
-    Returns
-    -------
-    numpy.ndarray
-        BGR colour image (256 x 256).
-    """
-    img = np.zeros((256, 256, 3), dtype=np.uint8)
-    img[:, :] = (170, 190, 220)  # light skin tone in BGR
-    # Irregular dark lesion (asymmetric, colour variation)
-    cv2.ellipse(img, (128, 132), (38, 28), 25, 0, 360, (20, 30, 40), -1)
-    cv2.ellipse(img, (142, 120), (16, 18), -10, 0, 360, (10, 15, 70), -1)
-    cv2.circle(img, (118, 140), 8, (30, 40, 90), -1)
-    cv2.GaussianBlur(img, (7, 7), 0, img)
-    return _add_gaussian_noise(img, 3)
-
-
-def build_brain_ct():
-    """
-    Build a synthetic axial brain CT slice with a hyperdense wedge.
-
-    Returns
-    -------
-    numpy.ndarray
-        Grayscale image (256 x 256).
-    """
-    img = np.zeros((256, 256), dtype=np.uint8)
-    img[:] = 10
-    cv2.circle(img, (128, 128), 110, 40, -1)  # skull
-    cv2.circle(img, (128, 128), 98, 90, -1)  # parenchyma
-    # Midline
-    cv2.line(img, (128, 40), (128, 216), 70, 2)
-    # Simulated acute hemorrhage / dense lesion on the left
-    pts = np.array([[70, 90], [110, 80], [115, 140], [60, 150]], np.int32)
-    cv2.fillConvexPoly(img, pts, 200)
-    cv2.GaussianBlur(img, (7, 7), 0, img)
-    return _add_gaussian_noise(img, 3)
-
-
-def build_fundus():
-    """
-    Build a synthetic retinal fundus photograph with blot-haemorrhage cues.
-
-    Returns
-    -------
-    numpy.ndarray
-        BGR colour image (256 x 256).
-    """
-    img = np.zeros((256, 256, 3), dtype=np.uint8)
-    cv2.circle(img, (128, 128), 120, (20, 40, 120), -1)
-    cv2.circle(img, (128, 128), 118, (15, 55, 160), -1)
-    # Optic disc
-    cv2.circle(img, (168, 128), 16, (80, 160, 220), -1)
-    # Vessel-like branches
-    for dx, dy in [(-50, -40), (-55, 35), (40, -45), (30, 50), (-20, -70)]:
-        cv2.line(img, (168, 128), (168 + dx, 128 + dy), (10, 20, 80), 2)
-    # Dot-blot haemorrhages
-    for cx, cy in [(90, 100), (100, 150), (80, 140), (110, 90)]:
-        cv2.circle(img, (cx, cy), 4, (10, 10, 40), -1)
-    mask = np.zeros((256, 256), dtype=np.uint8)
-    cv2.circle(mask, (128, 128), 120, 255, -1)
-    img[mask == 0] = (0, 0, 0)
-    cv2.GaussianBlur(img, (5, 5), 0, img)
-    return _add_gaussian_noise(img, 2)
-
-
-def build_wrist_xray():
-    """
-    Build a synthetic wrist radiograph with a lucent fracture line.
-
-    Returns
-    -------
-    numpy.ndarray
-        Grayscale image (256 x 256).
-    """
-    img = np.zeros((256, 256), dtype=np.uint8)
-    img[:] = 25
-    # Radius and ulna shafts
-    cv2.rectangle(img, (90, 40), (120, 170), 170, -1)
-    cv2.rectangle(img, (140, 50), (165, 175), 160, -1)
-    # Distal radius flare
-    cv2.ellipse(img, (105, 185), (28, 22), 0, 0, 360, 190, -1)
-    # Carpal bones
-    for i, x in enumerate(range(80, 180, 22)):
-        cv2.circle(img, (x, 220), 10, 175, -1)
-    # Fracture lucency through distal radius
-    cv2.line(img, (88, 168), (128, 188), 40, 2)
-    cv2.line(img, (92, 40), (92, 170), 210, 1)
-    cv2.line(img, (118, 40), (118, 170), 210, 1)
-    return _add_gaussian_noise(img, 4)
+def _write_sources():
+    """Write license credits next to the images."""
+    path = os.path.join(ROOT, "IMAGE_SOURCES.txt")
+    lines = [
+        "Public teaching images used by this project.",
+        "Notes in patient_XX.txt are fictional. Do not treat them as the original patients.",
+        "",
+    ]
+    for case_id in range(1, NUM_CASES + 1):
+        meta = CASES[case_id]
+        lines.append(
+            "patient_{:02d}: {} | {} | {}".format(
+                case_id, meta["filename"], meta["license"], meta["credit"]
+            )
+        )
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
 
 
 def prescription_text(case_id):
-    """
-    Return the de-identified prescription / patient-detail note for a case.
-
-    Parameters
-    ----------
-    case_id : int
-        Case index from 1 to 5.
-
-    Returns
-    -------
-    str
-        Plain-text clinical note.
-    """
+    """Return a fictional teaching note matched to the image modality."""
     notes = {
         1: (
-            "PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)\n"
+            "PATIENT DETAILS / PRESCRIPTION (fictional teaching case)\n"
             "Case ID: patient_01\n"
             "Age/Sex: 62-year-old male\n"
             "Chief complaint: Productive cough, fever 38.6 C, and dyspnoea for 4 days.\n"
@@ -271,10 +191,11 @@ def prescription_text(case_id):
             "Current medicines: Metformin 500 mg twice daily.\n"
             "Requested study: Chest radiograph (PA).\n"
             "Clinical question: Community-acquired pneumonia versus heart failure.\n"
-            "Plan requested: Correlate image with symptoms and advise triage / next steps."
+            "Plan requested: Correlate image with symptoms and advise triage / next steps.\n"
+            "Image source: public teaching radiograph (see IMAGE_SOURCES.txt)."
         ),
         2: (
-            "PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)\n"
+            "PATIENT DETAILS / PRESCRIPTION (fictional teaching case)\n"
             "Case ID: patient_02\n"
             "Age/Sex: 47-year-old female\n"
             "Chief complaint: Changing dark mole on the left forearm for 3 months.\n"
@@ -284,10 +205,11 @@ def prescription_text(case_id):
             "Current medicines: None.\n"
             "Requested study: Clinical photograph of the lesion.\n"
             "Clinical question: Suspicious pigmented lesion. Need risk stratification.\n"
-            "Plan requested: Correlate image with history and recommend dermatology pathway."
+            "Plan requested: Correlate image with history and recommend dermatology pathway.\n"
+            "Image source: public teaching photograph (see IMAGE_SOURCES.txt)."
         ),
         3: (
-            "PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)\n"
+            "PATIENT DETAILS / PRESCRIPTION (fictional teaching case)\n"
             "Case ID: patient_03\n"
             "Age/Sex: 71-year-old male\n"
             "Chief complaint: Sudden right-sided weakness and speech difficulty for 40 minutes.\n"
@@ -297,10 +219,11 @@ def prescription_text(case_id):
             "Current medicines: Amlodipine 5 mg daily.\n"
             "Requested study: Non-contrast CT brain.\n"
             "Clinical question: Acute stroke. Haemorrhage versus ischaemia.\n"
-            "Plan requested: Urgent image-text correlation and emergency triage."
+            "Plan requested: Urgent image-text correlation and emergency triage.\n"
+            "Image source: public teaching CT (see IMAGE_SOURCES.txt)."
         ),
         4: (
-            "PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)\n"
+            "PATIENT DETAILS / PRESCRIPTION (fictional teaching case)\n"
             "Case ID: patient_04\n"
             "Age/Sex: 58-year-old female\n"
             "Chief complaint: Gradual blurring of vision in both eyes for 6 months.\n"
@@ -310,10 +233,11 @@ def prescription_text(case_id):
             "Current medicines: Insulin, ramipril, atorvastatin.\n"
             "Requested study: Fundus photograph (left eye).\n"
             "Clinical question: Diabetic retinopathy screening / grading support.\n"
-            "Plan requested: Correlate fundus appearance with diabetic history."
+            "Plan requested: Correlate fundus appearance with diabetic history.\n"
+            "Image source: public teaching fundus photograph (see IMAGE_SOURCES.txt)."
         ),
         5: (
-            "PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)\n"
+            "PATIENT DETAILS / PRESCRIPTION (fictional teaching case)\n"
             "Case ID: patient_05\n"
             "Age/Sex: 29-year-old male\n"
             "Chief complaint: Pain and swelling of the left wrist after a FOOSH fall.\n"
@@ -323,40 +247,31 @@ def prescription_text(case_id):
             "Current medicines: None. Last tetanus unknown.\n"
             "Requested study: Left wrist radiograph.\n"
             "Clinical question: Distal radius or scaphoid fracture.\n"
-            "Plan requested: Correlate radiograph with trauma history and advise care."
+            "Plan requested: Correlate radiograph with trauma history and advise care.\n"
+            "Image source: public teaching radiograph (see IMAGE_SOURCES.txt)."
         ),
     }
     return notes[case_id]
 
 
-def generate_all_cases(overwrite=True):
+def generate_all_cases(overwrite=False):
     """
-    Write all five image-text pairs into the Codebase directory.
+    Download public teaching images (if missing) and write fictional notes.
 
     Parameters
     ----------
     overwrite : bool
-        If False, skip files that already exist.
+        If True, re-download images and rewrite notes.
 
     Returns
     -------
     list[dict]
-        Metadata for each generated case (paths and modality).
+        Metadata for each case.
     """
-    np.random.seed(42)
-    builders = {
-        1: build_chest_xray,
-        2: build_skin_lesion,
-        3: build_brain_ct,
-        4: build_fundus,
-        5: build_wrist_xray,
-    }
     cases = []
     for case_id in range(1, NUM_CASES + 1):
-        image_path, text_path = _case_paths(case_id)
-        if overwrite or not os.path.exists(image_path):
-            image = builders[case_id]()
-            cv2.imwrite(image_path, image)
+        image_path = _download_image(case_id, overwrite=overwrite)
+        text_path = os.path.join(ROOT, "patient_{:02d}.txt".format(case_id))
         if overwrite or not os.path.exists(text_path):
             with open(text_path, "w", encoding="utf-8") as handle:
                 handle.write(prescription_text(case_id))
@@ -366,20 +281,15 @@ def generate_all_cases(overwrite=True):
                 "image": os.path.basename(image_path),
                 "text": os.path.basename(text_path),
                 "modality": GROUND_TRUTH[case_id]["modality"],
+                "image_credit": CASES[case_id]["credit"],
             }
         )
+    _write_sources()
     return cases
 
 
 def list_input_pairs():
-    """
-    List the five input pairs that the assistant must process.
-
-    Returns
-    -------
-    list[tuple[int, str, str]]
-        Tuples of (case_id, image_path, text_path).
-    """
+    """List the five input pairs that the assistant must process."""
     pairs = []
     for case_id in range(1, NUM_CASES + 1):
         image_path, text_path = _case_paths(case_id)
@@ -388,7 +298,6 @@ def list_input_pairs():
 
 
 if __name__ == "__main__":
-    # Allow regenerating the dataset independently of the full assistant run.
     created = generate_all_cases(overwrite=True)
     for item in created:
-        print("Created", item)
+        print("Ready", item)

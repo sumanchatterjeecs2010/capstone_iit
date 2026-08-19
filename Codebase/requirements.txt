@@ -1,0 +1,3 @@
+requests
+langgraph
+langchain-core

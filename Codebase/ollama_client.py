@@ -1,12 +1,14 @@
 """
 ollama_client.py
 ----------------
-Thin HTTP client for local Ollama models.
+HTTP client for local Ollama models.
 
-Models are invoked one at a time and unloaded afterwards (keep_alive=0) so
-that two LLMs can share a machine with about 4 GB of RAM.
+MedGemma is called through /api/chat with an image. Llama 3.2 is called
+through the same chat API with text only. Models are unloaded after each
+call (keep_alive=0) so the two LLMs can share a machine with limited RAM.
 """
 
+import base64
 import json
 import re
 import time
@@ -20,29 +22,22 @@ class OllamaError(RuntimeError):
 
 class OllamaClient:
     """
-    Minimal wrapper around the Ollama generate API.
+    Minimal wrapper around Ollama chat and tags APIs.
 
     Parameters
     ----------
     host : str
-        Base URL of the Ollama server (default: local daemon).
+        Base URL of the Ollama server.
     timeout : int
         Per-request timeout in seconds.
     """
 
-    def __init__(self, host="http://127.0.0.1:11434", timeout=180):
+    def __init__(self, host="http://127.0.0.1:11434", timeout=1800):
         self.host = host.rstrip("/")
         self.timeout = timeout
 
     def is_available(self):
-        """
-        Return True if the Ollama daemon responds to /api/tags.
-
-        Returns
-        -------
-        bool
-            True when the server is reachable.
-        """
+        """Return True if the Ollama daemon responds to /api/tags."""
         try:
             response = requests.get(self.host + "/api/tags", timeout=5)
             return response.status_code == 200
@@ -50,14 +45,7 @@ class OllamaClient:
             return False
 
     def list_model_names(self):
-        """
-        List model names currently available on the local Ollama instance.
-
-        Returns
-        -------
-        list[str]
-            Installed model names (may include tag suffixes).
-        """
+        """Return installed Ollama model names."""
         response = requests.get(self.host + "/api/tags", timeout=10)
         response.raise_for_status()
         payload = response.json()
@@ -66,9 +54,6 @@ class OllamaClient:
     def resolve_model(self, requested):
         """
         Resolve a requested model name against installed Ollama tags.
-
-        Ollama sometimes stores names with different capitalisation
-        (for example llama3.2:3b vs Llama3.2:3b).
 
         Parameters
         ----------
@@ -85,15 +70,28 @@ class OllamaClient:
         for name in installed:
             if name.lower() == lowered:
                 return name
-        # Allow prefix match: "llama3.2:3b" vs "llama3.2:3b-instruct-q4"
         for name in installed:
             if name.lower().startswith(lowered) or lowered.startswith(name.lower()):
                 return name
+        needle = lowered.split("/")[-1].split(":")[0]
+        for name in installed:
+            if needle and needle in name.lower():
+                return name
         return requested
 
-    def generate(self, model, prompt, system=None, temperature=0.2, max_tokens=400, keep_alive="0", json_mode=False):
+    def chat(
+        self,
+        model,
+        prompt,
+        system=None,
+        images=None,
+        temperature=0.2,
+        max_tokens=400,
+        keep_alive="0",
+        json_mode=False,
+    ):
         """
-        Run a single non-streaming generation.
+        Run a single non-streaming chat completion.
 
         Parameters
         ----------
@@ -103,25 +101,33 @@ class OllamaClient:
             User / task prompt.
         system : str or None
             Optional system instruction.
+        images : list[str] or None
+            Optional local image paths for a vision LLM.
         temperature : float
-            Decoding temperature (kept low for clinical structure).
+            Decoding temperature.
         max_tokens : int
-            Maximum number of tokens to generate.
+            Maximum generated tokens.
         keep_alive : str or int
-            How long Ollama should keep the weights in memory. Use 0 when
-            switching to the other LLM so both models are never resident
-            at once (needed for ~4 GB RAM).
+            How long Ollama should keep weights loaded.
         json_mode : bool
-            If True, request a JSON object from Ollama's constrained decoder.
+            If True, request a JSON object from Ollama.
 
         Returns
         -------
         str
-            Model text with optional <think> traces removed.
+            Visible model text.
         """
+        message = {"role": "user", "content": prompt}
+        if images:
+            encoded = []
+            for path in images:
+                with open(path, "rb") as handle:
+                    encoded.append(base64.b64encode(handle.read()).decode("ascii"))
+            message["images"] = encoded
+
         body = {
             "model": model,
-            "prompt": prompt,
+            "messages": [message],
             "stream": False,
             "keep_alive": keep_alive,
             "options": {
@@ -129,22 +135,22 @@ class OllamaClient:
                 "num_predict": max_tokens,
             },
         }
+        if system:
+            body["messages"].insert(0, {"role": "system", "content": system})
         if json_mode:
             body["format"] = "json"
-        if system:
-            body["system"] = system
 
-        url = self.host + "/api/generate"
+        url = self.host + "/api/chat"
         last_error = None
-        for attempt in range(3):
+        attempts = 2 if images else 3
+        for attempt in range(attempts):
             try:
                 response = requests.post(url, json=body, timeout=self.timeout)
                 response.raise_for_status()
                 payload = response.json()
-                # Ollama 0.32+ may split chain-of-thought into a "thinking" field
-                # and keep the visible answer in "response".
-                visible = payload.get("response") or ""
-                thinking = payload.get("thinking") or ""
+                message_out = payload.get("message") or {}
+                visible = message_out.get("content") or payload.get("response") or ""
+                thinking = message_out.get("thinking") or payload.get("thinking") or ""
                 cleaned = strip_thinking(visible)
                 if not cleaned.strip():
                     cleaned = strip_thinking(thinking) or thinking or visible
@@ -152,27 +158,14 @@ class OllamaClient:
             except requests.RequestException as exc:
                 last_error = exc
                 time.sleep(1.5 * (attempt + 1))
-        raise OllamaError("Ollama generate failed for model '{}': {}".format(model, last_error))
+        raise OllamaError("Ollama chat failed for model '{}': {}".format(model, last_error))
 
 
 def strip_thinking(text):
-    """
-    Remove chain-of-thought <think> blocks from a raw completion.
-
-    Parameters
-    ----------
-    text : str
-        Raw model output.
-
-    Returns
-    -------
-    str
-        Visible answer text only.
-    """
+    """Remove chain-of-thought <think> blocks from a raw completion."""
     if not text:
         return ""
     cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    # If the model opened a think block but did not close it, drop that prefix.
     cleaned = re.sub(r"<think>.*", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
     return cleaned.strip()
 
@@ -180,8 +173,6 @@ def strip_thinking(text):
 def extract_json(text):
     """
     Extract the first JSON object or array from a free-form LLM reply.
-
-    Small models often wrap JSON in markdown fences or extra prose.
 
     Parameters
     ----------
@@ -212,7 +203,6 @@ def extract_json(text):
     try:
         return json.loads(candidate)
     except json.JSONDecodeError:
-        # Try a lighter repair: keep only the outermost braces.
         try:
             start = candidate.find("{")
             end = candidate.rfind("}")
