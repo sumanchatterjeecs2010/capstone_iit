@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+~$*.docx
+.DS_Store
+.venv/
+venv/

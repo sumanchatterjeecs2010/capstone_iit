@@ -1,0 +1,257 @@
+{
+  "case_id": "patient_03",
+  "input": {
+    "image": "patient_03.png",
+    "prescription": "patient_03.txt"
+  },
+  "visual_analysis": {
+    "file_name": "patient_03.png",
+    "inferred_modality": "brain_ct",
+    "features": {
+      "width": 256,
+      "height": 256,
+      "mostly_grayscale": true,
+      "mean_brightness": 54.63429260253906,
+      "contrast": 47.64589956932643,
+      "edge_density": 0.0146484375,
+      "circularity": 0.7991562833048232,
+      "left_right_asymmetry": 9.427398681640625,
+      "bright_pixel_ratio": 0.0405120849609375,
+      "dark_pixel_ratio": 0.47979736328125,
+      "intensity_histogram_8bin": [
+        0.4306,
+        0.1089,
+        0.3998,
+        0.0141,
+        0.0036,
+        0.0051,
+        0.0379,
+        0.0
+      ]
+    },
+    "visual_findings": [
+      "Near-circular grayscale structure consistent with an axial brain CT slice.",
+      "Hemispheric intensity asymmetry is present; haemorrhage or infarct should be considered.",
+      "Quantitative cues: brightness=54.6, contrast=47.6, edges=0.015, asymmetry=9.4.",
+      "normal brain CT (image=0.31, note=0.63, fused=0.50)",
+      "acute ischaemic stroke (image=0.18, note=0.65, fused=0.46)",
+      "pulmonary edema (image=0.00, note=0.72, fused=0.43)",
+      "intracranial hemorrhage (image=0.04, note=0.64, fused=0.40)",
+      "BioBERT+CLIP findings for brain ct: normal brain CT; acute ischaemic stroke; intracranial hemorrhage."
+    ],
+    "method": "OpenCV + pubmedclip + BioBERT",
+    "opencv_modality": "brain_ct",
+    "encoder_modality": "brain_ct",
+    "fused_findings": [
+      {
+        "id": "normal_ct",
+        "label": "normal brain CT",
+        "modality": "brain_ct",
+        "prompt": "a normal non-contrast CT of the brain",
+        "image_score": 0.3116,
+        "note_score": 0.6326,
+        "fused_score": 0.5042,
+        "agreement": true
+      },
+      {
+        "id": "infarct",
+        "label": "acute ischaemic stroke",
+        "modality": "brain_ct",
+        "prompt": "a brain CT showing acute ischaemic stroke or infarct",
+        "image_score": 0.1752,
+        "note_score": 0.6482,
+        "fused_score": 0.459,
+        "agreement": true
+      },
+      {
+        "id": "ich",
+        "label": "intracranial hemorrhage",
+        "modality": "brain_ct",
+        "prompt": "a brain CT showing intracranial hemorrhage or hyperdense blood",
+        "image_score": 0.044,
+        "note_score": 0.6397,
+        "fused_score": 0.4014,
+        "agreement": false
+      }
+    ],
+    "modality_scores": [
+      {
+        "id": "mod_brain",
+        "label": "brain CT",
+        "modality": "brain_ct",
+        "prompt": "an axial CT scan of the brain",
+        "image_score": 0.3552,
+        "note_score": 0.6181,
+        "fused_score": 0.5129,
+        "agreement": true
+      },
+      {
+        "id": "mod_chest",
+        "label": "chest radiograph",
+        "modality": "chest_xray",
+        "prompt": "a frontal chest radiograph of the lungs",
+        "image_score": 0.0028,
+        "note_score": 0.6069,
+        "fused_score": 0.3653,
+        "agreement": false
+      },
+      {
+        "id": "mod_fundus",
+        "label": "retinal fundus photograph",
+        "modality": "fundus",
+        "prompt": "a colour retinal fundus photograph of the eye",
+        "image_score": 0.0252,
+        "note_score": 0.5769,
+        "fused_score": 0.3562,
+        "agreement": false
+      },
+      {
+        "id": "mod_bone",
+        "label": "extremity radiograph",
+        "modality": "bone_xray",
+        "prompt": "a radiograph of the wrist and distal radius",
+        "image_score": 0.0131,
+        "note_score": 0.5628,
+        "fused_score": 0.3429,
+        "agreement": false
+      },
+      {
+        "id": "mod_skin",
+        "label": "dermatology photograph",
+        "modality": "dermatology_photo",
+        "prompt": "a close-up clinical photograph of a skin lesion",
+        "image_score": 0.0029,
+        "note_score": 0.563,
+        "fused_score": 0.339,
+        "agreement": false
+      }
+    ],
+    "fusion_summary": "After locking modality to brain_ct, ranked findings are: normal brain CT (0.50); acute ischaemic stroke (0.46); intracranial hemorrhage (0.40).",
+    "vision_backend": "pubmedclip",
+    "text_backend": "biobert",
+    "text_requested_modality": "brain_ct",
+    "image_only_modality": "brain_ct",
+    "retrieved_findings": [
+      "normal brain CT (fused=0.50, image=0.31, note=0.63)",
+      "acute ischaemic stroke (fused=0.46, image=0.18, note=0.65)",
+      "intracranial hemorrhage (fused=0.40, image=0.04, note=0.64)"
+    ],
+    "langchain_retriever": "CrossModalFindingRetriever"
+  },
+  "extracted_entities": {
+    "age_sex": "see note",
+    "chief_complaint": "Age/Sex: 71-year-old male",
+    "history": "see note",
+    "vitals": "see note",
+    "exam": "see note",
+    "medications": "see note",
+    "requested_study": "see note",
+    "clinical_question": "see note",
+    "raw_note": "PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)\nCase ID: patient_03\nAge/Sex: 71-year-old male\nChief complaint: Sudden right-sided weakness and speech difficulty for 40 minutes.\nHistory: Hypertension, atrial fibrillation (not on anticoagulation).\nVitals: BP 188/102, HR 96 irregular, SpO2 97%, NIHSS-like deficits present.\nExam: Right hemiparesis, facial droop, aphasia. Symptom onset witnessed.\nCurrent medicines: Amlodipine 5 mg daily.\nRequested study: Non-contrast CT brain.\nClinical question: Acute stroke. Haemorrhage versus ischaemia.\nPlan requested: Urgent image-text correlation and emergency triage.",
+    "parser": "llama",
+    "raw_model_output": "{\"patient_03\": {\n  \"age_sex\": \"71-year-old male\",\n  \"chief_complaint\": \"Sudden right-sided weakness and speech difficulty\",\n  \"history\": \"Hypertension, atrial fibrillation (not on anticoagulation)\",\n  \"vitals\": \"BP 188/102, HR 96 irregular, SpO2 97%\",\n  \"exam\": \"Right hemiparesis, facial droop, aphasia\",\n  \"medications\": \"Amlodipine 5 mg daily\",\n  \"requested_study\": \"Non-contrast CT brain\",\n  \"clinical_question\": \"Acute stroke. Haemorrhage versus ischaemia\"\n}}"
+  },
+  "clinical_reasoning": {
+    "impression": "Acute ischaemic stroke with intracranial hemorrhage",
+    "differential": [
+      "Acute ischaemic stroke",
+      "Intracranial hemorrhage",
+      "Haemorrhagic stroke",
+      "Ischaemic stroke",
+      "Hypertensive emergency",
+      "Atrial fibrillation-related stroke"
+    ],
+    "triage": "emergency",
+    "triage_rationale": "Clinical presentation of sudden right-sided weakness and speech difficulty, witnessed symptom onset, and NIHSS-like deficits, along with vitals indicating hypertension and irregular heart rate, suggest acute stroke with hemorrhagic component.",
+    "recommendations": [
+      "Immediate transport to stroke center for further evaluation and management",
+      "Anticoagulation therapy to be withheld",
+      "Blood pressure management to target < 140/90 mmHg",
+      "Oxygen therapy to maintain SpO2 > 95%",
+      "Neuroimaging follow-up to assess hemorrhage size and evolution"
+    ],
+    "follow_up_questions": [
+      "What is the patient's current anticoagulation status?",
+      "Are there any other symptoms or deficits present?",
+      "What is the patient's blood pressure at the time of transport?",
+      "Are there any concerns for hemorrhagic transformation?"
+    ],
+    "image_text_correlation": "Image evidence supports acute ischaemic stroke with intracranial hemorrhage, with normal brain CT being less relevant to the current clinical presentation.",
+    "safety_flags": [
+      "Haemorrhagic transformation risk",
+      "Increased intracranial pressure",
+      "Seizure risk",
+      "Hypertensive crisis",
+      "Cardiovascular instability"
+    ],
+    "parser": "llama",
+    "raw_note_excerpt": "PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)\nCase ID: patient_03\nAge/Sex: 71-year-old male\nChief complaint: Sudden right-sided weakness and speech difficulty for 40 minutes.\nHistory: Hypertension, atrial fibrillation (not on an",
+    "raw_model_output": "{\n  \"impression\": \"Acute ischaemic stroke with intracranial hemorrhage\",\n  \"differential\": [\n    \"Acute ischaemic stroke\",\n    \"Intracranial hemorrhage\",\n    \"Haemorrhagic stroke\",\n    \"Ischaemic stroke\",\n    \"Hypertensive emergency\",\n    \"Atrial fibrillation-related stroke\"\n  ],\n  \"triage\": \"emergency\",\n  \"triage_rationale\": \"Clinical presentation of sudden right-sided weakness and speech difficulty, witnessed symptom onset, and NIHSS-like deficits, along with vitals indicating hypertension and irregular heart rate, suggest acute stroke with hemorrhagic component.\",\n  \"recommendations\": [\n    \"Immediate transport to stroke center for further evaluation and management\",\n    \"Anticoagulation therapy to be withheld\",\n    \"Blood pressure management to target < 140/90 mmHg\",\n    \"Oxygen therapy to maintain SpO2 > 95%\",\n    \"Neuroimaging follow-up to assess hemorrhage size and evolution\"\n  ],\n  \"follow_up_questions\": [\n    \"What is the patient's current anticoagulation status?\",\n    \"Are there any other symptoms or deficits present?\",\n    \"What is the patient's blood pressure at the time of transport?\",\n    \"Are there any concerns for hemorrhagic transformation?\"\n  ],\n  \"image_text_correlation\": \"Image evidence supports acute ischaemic stroke with intracranial hemorrhage, with normal brain CT being less relevant to the current clinical presentation.\",\n  \"safety_flags\": [\n    \"Haemorrhagic transformation risk\",\n    \"Increased intracranial pressure\",\n    \"Seizure risk\",\n    \"Hypertensive crisis\",\n    \"Cardiovascular instability\"\n  ]\n}",
+    "llm_triage": "emergency",
+    "triage_calibration": "Focal neurologic deficit with sudden onset in the note."
+  },
+  "conversation": [
+    {
+      "role": "clinician",
+      "content": "I am uploading a medical image (patient_03.png) with this patient note:\nPATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)\nCase ID: patient_03\nAge/Sex: 71-year-old male\nChief complaint: Sudden right-sided weakness and speech difficulty for 40 minutes.\nHistory: Hypertension, atrial fibrillation (not on anticoagulation).\nVitals: BP 188/102, HR 96 irregular, SpO2 97%, NIHSS-like deficits present.\nExam: Right hemiparesis, facial droop, aphasia. Symptom onset witnessed.\nCurrent medicines: Amlodipine 5 mg daily.\nRequested study: Non-contrast CT brain.\nClinical question: Acute stroke. Haemorrhage versus ischaemia.\nPlan requested: Urgent image-text correlation and emergency triage."
+    },
+    {
+      "role": "assistant",
+      "content": "The patient is a 71-year-old male with a chief complaint that is not specified in the provided information. The brain CT scan shows hemispheric intensity asymmetry, which suggests the presence of an acute ischaemic stroke or infarct. The imaging findings also indicate the presence of intracranial hemorrhage. The clinical impression is acute ischaemic stroke with intracranial hemorrhage. The differential diagnosis includes acute ischaemic stroke, intracranial hemorrhage, and other conditions. The recommended course of action includes immediate transport to a stroke center, anticoagulation therapy to be withheld, and blood pressure management.\n\nThis is for educational purposes only and should not be used as clinical advice. Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings."
+    },
+    {
+      "role": "clinician",
+      "content": "Interpret this image and correlate it with the symptoms and history."
+    },
+    {
+      "role": "assistant",
+      "content": "The brain CT image shows a near-circular grayscale structure, consistent with an axial brain CT slice. Hemispheric intensity asymmetry is present, suggesting hemorrhage or infarct. The quantitative cues support this, with brightness, contrast, and edges indicating abnormality. The fused findings also support acute ischaemic stroke with intracranial hemorrhage, with a normal brain CT being less relevant. The clinical context supports this interpretation, with a 71-year-old male presenting with symptoms consistent with an acute ischaemic stroke. This image is most consistent with a diagnosis of acute ischaemic stroke with intracranial hemorrhage.\n\n**Please note that this is an educational interpretation and not a clinical decision. Consult with a qualified healthcare professional for a definitive diagnosis and treatment plan.** Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings."
+    },
+    {
+      "role": "clinician",
+      "content": "What triage category do you suggest, and what should we do next?"
+    },
+    {
+      "role": "assistant",
+      "content": "**Triage:** Emergency\n**Rationale:** The brain CT shows evidence of acute ischaemic stroke with intracranial hemorrhage, which is a life-threatening condition requiring immediate attention. The presence of hemispheric intensity asymmetry and quantitative cues suggesting a significant hemorrhage support this diagnosis.\n\n**Next Steps:** Immediate transport to a stroke center for further evaluation and management, anticoagulation therapy to be withheld, blood pressure management to target < 140/90 mmHg, oxygen therapy to maintain SpO2 > 95%, and neuroimaging follow-up to assess hemorrhage size and evolution.\n\n**Follow-up Questions:**\n1. What is the patient's current blood pressure, and how will it be managed?\n2. Are there any concerns about the patient's anticoagulation therapy being restarted in the future? Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings."
+    },
+    {
+      "role": "clinician",
+      "content": "What is the patient's current anticoagulation status?"
+    },
+    {
+      "role": "assistant",
+      "content": "The patient's current anticoagulation status is not explicitly stated in the provided information. The clinical impression suggests that anticoagulation therapy should be withheld, but the patient's current use of anticoagulants is not documented. Clinical assessment is necessary to determine the patient's anticoagulation status and adjust the treatment plan accordingly.\n\nThis educational response is not intended to replace clinical judgment or provide personalized advice. Clinicians should consider the patient's individual circumstances and medical history when making decisions about anticoagulation therapy. Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings."
+    }
+  ],
+  "disclaimer": "Educational prototype only. This assistant does not provide a medical diagnosis and must not be used for real clinical decisions. A licensed clinician should review all findings.",
+  "models": {
+    "language_model": "llama3.2:3b",
+    "vision_encoder": "pubmedclip",
+    "text_encoder": "biobert",
+    "orchestrator": "langchain"
+  },
+  "elapsed_seconds": 222.1,
+  "evaluation": {
+    "case_id": 3,
+    "keyword_recall": 0.833,
+    "keywords_found": [
+      "stroke",
+      "neurologic",
+      "hemorrhage",
+      "brain",
+      "emergency"
+    ],
+    "keywords_expected": [
+      "stroke",
+      "neurologic",
+      "hemorrhage",
+      "ischemia",
+      "brain",
+      "emergency"
+    ],
+    "triage_match": 1,
+    "predicted_triage": "emergency",
+    "expected_triage": "emergency"
+  }
+}

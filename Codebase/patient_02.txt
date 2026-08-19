@@ -1,0 +1,11 @@
+PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)
+Case ID: patient_02
+Age/Sex: 47-year-old female
+Chief complaint: Changing dark mole on the left forearm for 3 months.
+History: Fair skin, several sunburns in childhood, no prior skin cancer.
+Exam: Asymmetric pigmented lesion ~9 mm, irregular border, colour variation.
+ABCDE: Asymmetry yes; Border irregular; Colour mixed; Diameter >6 mm; Evolving yes.
+Current medicines: None.
+Requested study: Clinical photograph of the lesion.
+Clinical question: Suspicious pigmented lesion. Need risk stratification.
+Plan requested: Correlate image with history and recommend dermatology pathway.

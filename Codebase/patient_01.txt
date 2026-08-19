@@ -1,0 +1,11 @@
+PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)
+Case ID: patient_01
+Age/Sex: 62-year-old male
+Chief complaint: Productive cough, fever 38.6 C, and dyspnoea for 4 days.
+History: Type 2 diabetes mellitus, former smoker (20 pack-years).
+Vitals: HR 108, RR 24, SpO2 91% on room air, BP 138/84 mmHg.
+Exam: Right basal crepitations, no wheeze.
+Current medicines: Metformin 500 mg twice daily.
+Requested study: Chest radiograph (PA).
+Clinical question: Community-acquired pneumonia versus heart failure.
+Plan requested: Correlate image with symptoms and advise triage / next steps.

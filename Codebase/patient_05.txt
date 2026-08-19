@@ -1,0 +1,11 @@
+PATIENT DETAILS / PRESCRIPTION (synthetic, de-identified)
+Case ID: patient_05
+Age/Sex: 29-year-old male
+Chief complaint: Pain and swelling of the left wrist after a FOOSH fall.
+History: Fall on outstretched hand while cycling 3 hours ago. No numbness.
+Vitals: Stable. Pain score 7/10.
+Exam: Distal radius tenderness, limited wrist motion, snuffbox mildly tender.
+Current medicines: None. Last tetanus unknown.
+Requested study: Left wrist radiograph.
+Clinical question: Distal radius or scaphoid fracture.
+Plan requested: Correlate radiograph with trauma history and advise care.
