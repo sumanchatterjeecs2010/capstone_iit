@@ -1,17 +1,30 @@
-python main.py
-
-# Defaults
-#   Vision LLM : medgemma:4b
-#   Text LLM   : llama3.2:3b
-# On a 4 GB RAM machine:
-#   python main.py --model llama3.2:1b --vision_model medgemma:4b
-
-# Prerequisites
-# 1. pip install -r requirements.txt
-# 2. Start Ollama
-# 3. ollama pull medgemma:4b
-# 4. ollama pull llama3.2:3b
-#    (or: ollama pull llama3.2:1b)
-# 5. python main.py
-#    First run downloads five public teaching images (Wikimedia/NIH).
-#    Notes remain fictional. See IMAGE_SOURCES.txt.
+python main.py
+
+# Default: clinician dashboard + interactive chat (browser)
+#   Open http://127.0.0.1:8000/
+#   1. Upload note + image → MedGemma + Llama analyze the case
+#   2. Review triage, image findings, references in the dashboard
+#   3. Type follow-up questions in the chat panel (adaptive triage updates)
+
+# Optional: five built-in teaching cases (sample_data/)
+#   python main.py --batch
+
+# Defaults
+#   Vision LLM : medgemma:4b
+#   Text LLM   : llama3.2:3b
+# On a 4 GB RAM machine:
+#   python main.py --model llama3.2:1b --vision_model medgemma:4b
+
+# Prerequisites
+# 1. pip install -r requirements.txt
+# 2. Start Ollama
+# 3. ollama pull medgemma:4b
+# 4. ollama pull llama3.2:3b
+#    (or: ollama pull llama3.2:1b)
+# 5. python main.py
+#
+# One-off CLI upload (no browser)
+#   python main.py --text note.txt --image slide.jpg --image_domain pathology
+#
+# Privacy / NLP unit tests (no GPU)
+#   python test_ingestion.py

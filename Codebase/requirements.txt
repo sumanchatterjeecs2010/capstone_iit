@@ -1,3 +1,8 @@
 requests
 langgraph
 langchain-core
+fastapi
+uvicorn
+python-multipart
+pydicom
+numpy

@@ -1,18 +1,11 @@
 """
 main.py
 -------
-Entry point for the HPPCS[04] Multimodal Medical Assistant.
+Entry point. Default: clinician dashboard at http://127.0.0.1:8000/
 
-Required behaviour
-- Read 5 medical images paired with 5 prescription / patient-detail files.
-- Use two LLMs: MedGemma 1.5 4B (image + note) and Llama 3.2 (generation).
-- Use LangGraph to order those LLM calls.
-- Write one conversation JSON file per input (conversation_01.json ... _05.json).
-
-Usage
-    python main.py
-    python main.py --model llama3.2:3b --vision_model medgemma:4b
-    python main.py --model llama3.2:1b
+    python main.py              # dashboard + chat
+    python main.py --batch      # optional 5-case demo in sample_data/
+    python main.py --text a.txt --image b.jpg
 """
 
 import argparse
@@ -26,138 +19,121 @@ from ollama_client import OllamaClient, OllamaError
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-
-VISION_ALIASES = [
-    "medgemma:4b",
-    "medgemma",
-    "medgemma:latest",
-    "medgemma:1.5",
-    "dcarrascosa/medgemma-1.5-4b-it:Q4_K_M",
-    "dcarrascosa/medgemma-1.5-4b-it",
-]
+SAMPLE_DIR = os.path.join(ROOT, "sample_data")
+UPLOADS_DIR = os.path.join(ROOT, "uploads", "processed")
+VISION_ALIASES = ["medgemma:4b", "medgemma", "medgemma:latest", "medgemma:1.5"]
 
 
 def parse_args(argv=None):
-    """Parse command-line arguments for the assistant."""
-    parser = argparse.ArgumentParser(
-        description="Multimodal Medical Assistant using MedGemma, Llama 3.2 and LangGraph."
-    )
-    parser.add_argument(
-        "--model",
-        "--model1",
-        dest="model",
-        default="llama3.2:3b",
-        help="Text LLM for entities, triage JSON and dialogue (default: llama3.2:3b).",
-    )
-    parser.add_argument(
-        "--vision_model",
-        default="medgemma:4b",
-        help="Vision LLM for image + note understanding (default: medgemma:4b).",
-    )
-    parser.add_argument(
-        "--api_key",
-        default="",
-        help="Optional API key (ignored for local Ollama).",
-    )
-    parser.add_argument(
-        "--host",
-        default="http://127.0.0.1:11434",
-        help="Ollama server URL.",
-    )
-    parser.add_argument(
-        "--skip_dataset_build",
-        action="store_true",
-        help="Do not re-download public teaching images or rewrite notes.",
-    )
+    parser = argparse.ArgumentParser(description="Multimodal Medical Assistant")
+    parser.add_argument("--model", default="llama3.2:3b", help="Text LLM (default llama3.2:3b)")
+    parser.add_argument("--vision_model", default="medgemma:4b", help="Vision LLM (default medgemma:4b)")
+    parser.add_argument("--host", default="http://127.0.0.1:11434", help="Ollama URL")
+    parser.add_argument("--skip_dataset_build", action="store_true", help="Skip sample_data download")
+    parser.add_argument("--batch", action="store_true", help="Run five teaching cases")
+    parser.add_argument("--serve", action="store_true", help="Start dashboard (default)")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--text", default="", help="CLI note path")
+    parser.add_argument("--image", default="", help="CLI image path")
+    parser.add_argument("--image_domain", default="radiology")
     return parser.parse_args(argv)
 
 
 def _is_installed(client, name):
-    """Return True if an Ollama tag is present locally."""
     installed = [item.lower() for item in client.list_model_names()]
     lowered = name.lower()
-    return lowered in installed or any(lowered in item or item.startswith(lowered.split(":")[0]) for item in installed)
+    return lowered in installed or any(lowered in item for item in installed)
 
 
 def ensure_llama(client, model):
-    """Verify Llama 3.2 is installed, falling back from 3B to 1B if needed."""
     resolved = client.resolve_model(model)
     if not _is_installed(client, resolved) and model.lower().startswith("llama3.2:3b"):
-        print("llama3.2:3b is not installed; falling back to llama3.2:1b.", flush=True)
+        print("llama3.2:3b missing; using llama3.2:1b", flush=True)
         model = "llama3.2:1b"
         resolved = client.resolve_model(model)
     if not _is_installed(client, resolved):
-        raise OllamaError("Model '{}' is not installed. Run: ollama pull {}".format(model, model))
+        raise OllamaError("Model '{}' not installed. Run: ollama pull {}".format(model, model))
     return resolved
 
 
 def ensure_vision(client, model):
-    """Verify a MedGemma vision tag is installed, trying common aliases."""
-    candidates = [model] + [alias for alias in VISION_ALIASES if alias != model]
-    last = model
-    for candidate in candidates:
+    for candidate in [model] + [a for a in VISION_ALIASES if a != model]:
         resolved = client.resolve_model(candidate)
-        last = resolved
         if _is_installed(client, resolved):
             if resolved != model:
-                print("Using installed vision model:", resolved, flush=True)
+                print("Using vision model:", resolved, flush=True)
             return resolved
-    raise OllamaError(
-        "MedGemma is not installed. Run: ollama pull medgemma:4b "
-        "(tried '{}')".format(last)
-    )
+    raise OllamaError("MedGemma not installed. Run: ollama pull medgemma:4b")
 
 
-def run(args):
-    """Execute the five-case multimodal pipeline and write JSON outputs."""
-    os.chdir(ROOT)
-    if not args.skip_dataset_build:
-        generate_all_cases(overwrite=False)
-
+def setup_models(args):
     client = OllamaClient(host=args.host)
     if not client.is_available():
-        raise OllamaError(
-            "Ollama is not reachable at {}. Start it, then re-run python main.py.".format(client.host)
-        )
-    vision_model = ensure_vision(client, args.vision_model)
-    llama_model = ensure_llama(client, args.model)
-    print("Using vision LLM     :", vision_model, flush=True)
-    print("Using language LLM   :", llama_model, flush=True)
-    print("Using orchestrator   : LangGraph", flush=True)
-    if args.api_key:
-        print("API key received as a parameter and will be ignored for local Ollama calls.", flush=True)
+        raise OllamaError("Ollama not reachable at {}.".format(client.host))
+    vision = ensure_vision(client, args.vision_model)
+    llama = ensure_llama(client, args.model)
+    return client, vision, llama
 
-    get_graph(client)
 
+def run_single_upload(args, client, vision_model, llama_model):
+    if not os.path.exists(args.text) or not os.path.exists(args.image):
+        print("Missing --text or --image.", file=sys.stderr)
+        return 1
+    record = process_case(
+        client, vision_model, llama_model, 0, args.image, args.text, args.image_domain
+    )
+    os.makedirs(UPLOADS_DIR, exist_ok=True)
+    out = os.path.join(UPLOADS_DIR, "conversation_upload.json")
+    save_json(out, record)
+    print("Wrote", out, flush=True)
+    return 0
+
+
+def run_batch(args, client, vision_model, llama_model):
+    if not args.skip_dataset_build:
+        generate_all_cases(overwrite=False)
     records = []
     for case_id, image_path, text_path in list_input_pairs():
         if not os.path.exists(image_path) or not os.path.exists(text_path):
-            print("Missing input for case", case_id, file=sys.stderr)
+            print("Missing sample_data case", case_id, file=sys.stderr)
             return 1
-        print("\n=== Processing patient_{:02d} ===".format(case_id), flush=True)
-        record = process_case(
-            client=client,
-            vision_model=vision_model,
-            llama_model=llama_model,
-            case_id=case_id,
-            image_path=image_path,
-            text_path=text_path,
-        )
-        out_name = "conversation_{:02d}.json".format(case_id)
-        save_json(os.path.join(ROOT, out_name), record)
+        print("\n=== patient_{:02d} ===".format(case_id), flush=True)
+        record = process_case(client, vision_model, llama_model, case_id, image_path, text_path)
+        save_json(os.path.join(SAMPLE_DIR, "conversation_{:02d}.json".format(case_id)), record)
         records.append(record)
-        print("Wrote", out_name, "in", record["elapsed_seconds"], "s", flush=True)
         print("Triage:", record["clinical_reasoning"].get("triage"), flush=True)
-
     summary = aggregate_metrics(records)
-    save_json(os.path.join(ROOT, "evaluation_summary.json"), summary)
-    print("\n=== Evaluation summary (synthetic keyword metrics) ===", flush=True)
+    save_json(os.path.join(SAMPLE_DIR, "evaluation_summary.json"), summary)
     print(json.dumps(summary, indent=2), flush=True)
     return 0
 
 
+def run(args):
+    os.chdir(ROOT)
+    use_dashboard = args.serve or (not args.batch and not (args.text and args.image))
+    if use_dashboard:
+        client, vision, llama = setup_models(args)
+        os.environ["OLLAMA_HOST"] = args.host
+        os.environ["VISION_MODEL"] = vision
+        os.environ["LLAMA_MODEL"] = llama
+        from upload_app import serve
+
+        print("Open http://127.0.0.1:{}/".format(args.port), flush=True)
+        serve(port=args.port)
+        return 0
+
+    client, vision, llama = setup_models(args)
+    print("Vision:", vision, "| Language:", llama, flush=True)
+    get_graph(client)
+    if args.text and args.image:
+        return run_single_upload(args, client, vision, llama)
+    if args.batch:
+        return run_batch(args, client, vision, llama)
+    print("Use --batch or --text with --image.", file=sys.stderr)
+    return 1
+
+
 def main():
-    """Command-line entry point used by `python main.py`."""
     args = parse_args()
     try:
         code = run(args)

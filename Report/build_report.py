@@ -1,4 +1,4 @@
-"""Build Report.docx and Report.pdf for the rewritten assistant."""
+"""Build Report.docx and Report.pdf for the Multimodal Medical Assistant."""
 
 from pathlib import Path
 
@@ -13,148 +13,134 @@ from reportlab.platypus import ListFlowable, ListItem, Paragraph, SimpleDocTempl
 OUT_DIR = Path(__file__).resolve().parent
 
 TITLE = "Multimodal Medical Assistant for Image-Text Clinical Triage"
-SUBTITLE = "HPPCS[04] — MedGemma 1.5 4B, Llama 3.2 and LangGraph"
+SUBTITLE = "HPPCS[04] — MedGemma 1.5 4B, Llama 3.2, LangGraph and Clinician Dashboard"
 
 PARAS = [
     (
         "Abstract",
-        "This project implements an educational Multimodal Medical Assistant that reads five "
-        "synthetic image-note pairs and writes five conversation JSON files (HPPCS[04]). "
-        "The general capstone brief asks for at least two large language models. This rewrite "
-        "therefore uses two generative LLMs with a clear split of labour: MedGemma 1.5 4B "
-        "(vision) inspects the medical teaching image together with the patient note; Llama 3.2 "
-        "(text) extracts entities, writes structured triage JSON, and produces the clinician-facing "
-        "dialogue. LangGraph is the orchestrator: a four-node state graph runs MedGemma first, "
-        "then three Llama nodes, so each model sees only the evidence it needs. OpenCV remains "
-        "only in the dataset builder that draws the synthetic PNGs. CLIP, BioBERT and LangChain "
-        "LCEL chains were removed. This is an educational prototype, not a diagnostic device.",
+        "This project implements an educational Multimodal Medical Assistant (HPPCS[04]) "
+        "that combines a medical vision LLM with a text LLM under LangGraph control. "
+        "MedGemma 1.5 4B reads the uploaded medical image together with a clinical note; "
+        "Llama 3.2 extracts entities, writes structured triage JSON, and produces clinician-facing "
+        "text. The default entry point is python main.py, which opens a browser dashboard where "
+        "clinicians upload de-identified note and image files, review triage and image findings, "
+        "and ask interactive follow-up questions. An optional batch mode (python main.py --batch) "
+        "processes five public teaching cases stored in sample_data/. Privacy scrubbing, entity "
+        "normalization, and educational reference links are included. This is a prototype, not a "
+        "diagnostic device.",
     ),
     (
         "1. Introduction",
-        "A multimodal assistant must both look at a picture and talk about a case. Putting those "
-        "jobs into one undifferentiated script hides mistakes, such as asking a small text model "
-        "to invent imaging signs. The previous implementation used OpenCV, PubMedCLIP and BioBERT "
-        "as encoders and a single Llama 3.2 generator. Encoders are not LLMs, so that design did "
-        "not meet a two-LLM requirement. The rewrite keeps the same five teaching cases and the "
-        "same JSON deliverable, but replaces the encoder stack with a medical vision LLM and "
-        "keeps Llama 3.2 as the writer.",
+        "Multimodal clinical support requires both image understanding and structured reasoning "
+        "over text. A single undifferentiated script makes errors hard to trace—for example, "
+        "asking a text-only model to invent imaging signs. Earlier versions used separate encoders "
+        "(OpenCV, CLIP, BioBERT) plus one generator. The current design uses two generative LLMs "
+        "with explicit roles and a LangGraph orchestrator. OpenCV, CLIP, BioBERT and LangChain "
+        "LCEL chains were removed.",
     ),
     (
         "2. Problem Statement",
-        "Given a medical image and a short prescription-style note, produce a multi-turn "
-        "conversation that summarises the case, correlates image findings with symptoms, assigns "
-        "triage (emergency, urgent, soon or routine) and asks follow-up questions, with a "
-        "non-clinical disclaimer. Five such conversations must be written to disk.",
+        "Given a medical image and a short clinical note, produce an educational assistant response "
+        "that correlates image findings with symptoms, assigns triage (emergency, urgent, soon or "
+        "routine), suggests next steps, and supports follow-up questioning. Clinicians must be "
+        "able to upload their own files through a simple interface without mixing them with demo data.",
     ),
     (
         "3. Objectives",
         None,
     ),
     (
-        "4. Why these two LLMs",
-        "MedGemma 1.5 4B is a Gemma-3-based multimodal model trained for medical text and medical "
-        "images (radiology, dermatology, ophthalmology and related teaching domains). It accepts "
-        "image plus text and emits text. Llama 3.2 3B (or 1B on a 4 GB machine) is a general "
-        "instruction-tuned text LLM. It cannot see pixels, but it is compact, already named in "
-        "the original brief, and is used here only as the generator: entities, triage JSON and "
-        "dialogue. The two models are not duplicates. MedGemma is not used to write the full "
-        "conversation, and Llama is not asked to look at the PNG. On a small computer they are "
-        "loaded one after the other (MedGemma keep_alive=0) so both weight files are not held "
-        "in RAM at once.",
+        "4. Two-LLM Architecture",
+        "MedGemma 1.5 4B (medgemma:4b on Ollama) is a Gemma-3-based multimodal model for medical "
+        "image and text. It receives the de-identified image and note and returns structured visual "
+        "findings. Llama 3.2 3B (or 1B on low-RAM machines) is the text generator: entity extraction, "
+        "triage JSON, initial summary, and follow-up chat replies. The models run sequentially through "
+        "Ollama so both weight files need not stay in RAM at once.",
     ),
     (
-        "5. Why LangGraph",
-        "LangGraph is not a medical model. It records the order of work as a graph of named "
-        "nodes that share a typed state. Node 1 (medgemma_analyze) writes visual_analysis. "
-        "Node 2 (llama_entities) writes extracted_entities. Node 3 (llama_reason) writes "
-        "clinical_reasoning using MedGemma findings plus the note. Node 4 (llama_converse) "
-        "writes the conversation. Edges are linear: START → MedGemma → Llama entities → "
-        "Llama reasoning → Llama dialogue → END. That graph is the markable orchestration "
-        "layer. Prompt text lives next to the node that uses it. JSON repair stays in the "
-        "Ollama client so malformed small-model output does not crash the graph.",
+        "5. LangGraph Workflow",
+        "LangGraph is the orchestrator, not a medical model. A linear four-node graph shares typed "
+        "state: (1) medgemma_analyze → visual_analysis; (2) llama_entities → extracted_entities; "
+        "(3) llama_reason → clinical_reasoning with triage and recommendations; (4) llama_converse → "
+        "one clinician-facing summary turn. Interactive follow-ups after upload use Llama text-only "
+        "via POST /chat, reusing stored findings without re-running MedGemma. JSON parsing and retry "
+        "logic live in ollama_client.py.",
     ),
     (
-        "6. Methodology / Workflow",
-        "dataset_builder.py procedurally draws five 256×256 teaching images (chest radiograph "
-        "with opacity, irregular mole, brain CT with a dense wedge, fundus with blot haemorrhages, "
-        "wrist radiograph with a lucent line) and writes matching de-identified notes. No real "
-        "patient data is used. main.py checks that Ollama is up, resolves medgemma:4b (or an "
-        "installed alias) and llama3.2:3b (falling back to llama3.2:1b). For each case, LangGraph "
-        "invokes MedGemma through Ollama /api/chat with the PNG attached as base64, then invokes "
-        "Llama three times for JSON entities, JSON reasoning, and prose turns. A note-based "
-        "calibration step then aligns triage with explicit red flags (for example sudden "
-        "hemiparesis → emergency; stable mole → soon). This calibration is a safety overlay for "
-        "small generators that over-call emergency; it does not replace clinician judgement. "
-        "Keyword recall and exact triage match are computed against the known synthetic labels "
-        "and stored in evaluation_summary.json.",
+        "6. Ingestion, Privacy and NLP",
+        "ingestion.py accepts clinical notes (.txt/.md) and images (JPEG, PNG, DICOM). privacy.py "
+        "de-identifies text with regex redaction (names, emails, phones, MRNs, dates) and strips "
+        "JPEG EXIF, PNG text chunks, or DICOM PHI tags before storage. Original uploads are never "
+        "written to disk. entity_normalizer.py maps Llama output to local educational codes for "
+        "conditions, medications, vitals and requested studies. clinical_references.py attaches "
+        "public WHO/NIH guideline links keyed by condition keywords.",
     ),
     (
-        "7. System Design / Implementation",
-        "main.py is the entry point. graph_pipeline.py defines CaseState, the four LangGraph "
-        "nodes and prompt contracts. medical_assistant.py compiles the graph once, packages "
-        "each JSON record and aggregates metrics. ollama_client.py wraps /api/chat and /api/tags, "
-        "strips optional <think> traces, and extracts JSON from fenced or noisy completions. "
-        "dataset_builder.py holds GROUND_TRUTH keywords used only for educational scoring. "
-        "OpenCV is not used at inference time. Removed modules: image_analyzer.py, "
-        "multimodal_encoder.py, langchain_orchestrator.py.",
+        "7. Clinician Interface",
+        "upload_app.py (FastAPI) serves the dashboard at http://127.0.0.1:8000/. The left panel "
+        "shows the processed image, triage badge, visual findings, impression, differential and "
+        "reference links. The right panel is an interactive chat: clinicians type follow-up "
+        "questions or click suggested chips; triage may update when new red-flag information "
+        "appears. Each session is stored under uploads/processed/<session_id>/conversation.json. "
+        "Teaching demo files live separately in sample_data/ and are not required for user uploads.",
     ),
     (
-        "8. Results and Analysis",
-        "Conversation files conversation_01.json … conversation_05.json and evaluation_summary.json "
-        "are produced by python main.py after the two Ollama models are installed "
-        "(ollama pull medgemma:4b and ollama pull llama3.2:3b). Metrics remain educational: "
-        "keyword recall searches the whole JSON record, so words copied from the input note "
-        "also count; triage accuracy can be lifted by the note-based calibration. Synthetic "
-        "cartoon images are a hard vision test even for MedGemma; the note is often the stronger "
-        "signal. The design goal of this rewrite is a correct two-LLM architecture with "
-        "LangGraph, not a claim of clinical diagnostic accuracy.",
+        "8. Dataset and Evaluation",
+        "dataset_builder.py downloads five public teaching images from Wikimedia/NIH and writes "
+        "matching fictional notes into sample_data/. python main.py --batch runs the pipeline on "
+        "these cases and writes conversation_01.json … conversation_05.json plus "
+        "evaluation_summary.json with keyword recall and triage match against known teaching labels. "
+        "These metrics are educational only, not clinical validation. MedGemma vision is slow on "
+        "CPU; a GPU (e.g. Google Colab T4) is recommended for first analysis.",
     ),
     (
-        "9. Limitations and Ethics",
-        "The assistant must not be used for real care. Images are schematic. Small LLMs "
-        "hallucinate. MedGemma on Ollama is the public 4B multimodal tag (medgemma:4b), which "
-        "tracks Google’s MedGemma family for medical image-text work; community quantisations "
-        "are accepted as aliases if the official tag is absent. Llama 3.2 is not medically "
-        "fine-tuned. Evaluation is not a reader study.",
+        "9. System Modules",
+        "main.py — entry point (dashboard default, --batch demo, CLI --text/--image). "
+        "graph_pipeline.py — LangGraph nodes and prompts. medical_assistant.py — case packaging, "
+        "session load/save, follow-up handler. ollama_client.py — Ollama HTTP wrapper. "
+        "upload_app.py — dashboard and chat API. Removed: image_analyzer.py, multimodal_encoder.py, "
+        "langchain_orchestrator.py.",
     ),
     (
-        "10. Conclusion and Future Work",
-        "The rewrite meets HPPCS[04] with two LLMs and a graph orchestrator: MedGemma 1.5 4B "
-        "for image-note understanding, Llama 3.2 for generation, LangGraph for control flow. "
-        "Future work includes running the same graph on de-identified real studies, replacing "
-        "keyword recall with clinician-rated conversation quality, and optional Llama 3.2 Vision "
-        "only if a second vision model is explicitly required.",
+        "10. Limitations and Ethics",
+        "The assistant must not be used for real patient care. Small LLMs hallucinate. Evaluation "
+        "is keyword-based on teaching cases, not a reader study. De-identification is "
+        "HIPAA-inspired but not certified. Users are responsible for lawful use of uploaded content.",
     ),
     (
-        "11. References",
+        "11. Conclusion and Future Work",
+        "The project meets HPPCS[04] with two LLMs, LangGraph orchestration, upload ingestion, "
+        "de-identification, entity normalization, and a clinician dashboard with interactive chat. "
+        "Future work: clinician-rated conversation quality, optional SNOMED/RxNorm coding, and "
+        "evaluation on de-identified real studies with appropriate governance.",
+    ),
+    (
+        "12. References",
         "[1] HAAI++ capstone instructions and HPPCS[04] brief. "
         "[2] A. Grattafiori et al., The Llama 3 herd of models, arXiv:2407.21783. "
         "[3] Google Health AI Developer Foundations, MedGemma model card, "
         "https://developers.google.com/health-ai-developer-foundations/medgemma/model-card "
         "[4] LangGraph documentation, https://langchain-ai.github.io/langgraph/ "
-        "[5] Ollama, https://ollama.com/library/medgemma "
-        "[6] Meta Llama 3.2, https://ollama.com/library/llama3.2 "
-        "[7] G. Bradski, The OpenCV library, 2000 (used only to synthesise teaching images).",
+        "[5] Ollama MedGemma, https://ollama.com/library/medgemma "
+        "[6] Ollama Llama 3.2, https://ollama.com/library/llama3.2 "
+        "[7] Wikimedia Commons and NIH public teaching images (see sample_data/IMAGE_SOURCES.txt).",
     ),
     (
         "Acknowledgement",
-        "The author thanks the HAAI++ faculty and the MedGemma, Llama, LangGraph and Ollama "
-        "communities. All images and notes are synthetic and educational.",
+        "Thanks to HAAI++ faculty and the MedGemma, Llama, LangGraph and Ollama communities. "
+        "Teaching images are public; accompanying notes are fictional.",
     ),
 ]
 
 OBJECTIVES = [
-    "Emit five conversation JSON files from five image-note pairs.",
-    "Use two LLMs: MedGemma 1.5 4B (vision) and Llama 3.2 (text generator).",
-    "Use LangGraph to order image understanding, entity extraction, reasoning and dialogue.",
-    "Keep a non-clinical educational disclaimer on every assistant turn.",
-    "Score the synthetic set with keyword recall and triage match, stating that these are not clinical metrics.",
+    "Provide a clinician dashboard to upload note + image and receive triage guidance.",
+    "Use two LLMs: MedGemma 1.5 4B (vision) and Llama 3.2 (text).",
+    "Orchestrate with LangGraph: analyze → entities → triage → summary.",
+    "De-identify uploads before storage or model calls.",
+    "Normalize clinical entities and attach educational reference links.",
+    "Support interactive follow-up chat with adaptive triage updates.",
+    "Optional batch evaluation on five teaching cases in sample_data/.",
 ]
-
-
-def add_docx_heading(doc, text, level=1):
-    heading = doc.add_heading(text, level=level)
-    return heading
 
 
 def build_docx():
@@ -173,7 +159,7 @@ def build_docx():
         run.italic = True
 
     for heading, body in PARAS:
-        add_docx_heading(doc, heading, 1)
+        doc.add_heading(heading, 1)
         if heading.startswith("3. Objectives"):
             for item in OBJECTIVES:
                 doc.add_paragraph(item, style="List Bullet")

@@ -16,6 +16,7 @@ import requests
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+SAMPLE_DIR = os.path.join(ROOT, "sample_data")
 NUM_CASES = 5
 
 USER_AGENT = (
@@ -123,12 +124,12 @@ GROUND_TRUTH = {
 
 def _case_paths(case_id):
     """Return image and note paths for a case, finding the downloaded image file."""
-    text_path = os.path.join(ROOT, "patient_{:02d}.txt".format(case_id))
-    planned = os.path.join(ROOT, CASES[case_id]["dest"])
+    text_path = os.path.join(SAMPLE_DIR, "patient_{:02d}.txt".format(case_id))
+    planned = os.path.join(SAMPLE_DIR, CASES[case_id]["dest"])
     if os.path.exists(planned):
         return planned, text_path
     for ext in (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG"):
-        candidate = os.path.join(ROOT, "patient_{:02d}{}".format(case_id, ext))
+        candidate = os.path.join(SAMPLE_DIR, "patient_{:02d}{}".format(case_id, ext))
         if os.path.exists(candidate):
             return candidate, text_path
     return planned, text_path
@@ -137,7 +138,7 @@ def _case_paths(case_id):
 def _download_image(case_id, overwrite=False):
     """Download one Wikimedia Commons file into Codebase/."""
     meta = CASES[case_id]
-    dest = os.path.join(ROOT, meta["dest"])
+    dest = os.path.join(SAMPLE_DIR, meta["dest"])
     if os.path.exists(dest) and not overwrite:
         return dest
     url = "https://commons.wikimedia.org/wiki/Special:FilePath/{}?width=768".format(
@@ -160,7 +161,7 @@ def _download_image(case_id, overwrite=False):
 
 def _write_sources():
     """Write license credits next to the images."""
-    path = os.path.join(ROOT, "IMAGE_SOURCES.txt")
+    path = os.path.join(SAMPLE_DIR, "IMAGE_SOURCES.txt")
     lines = [
         "Public teaching images used by this project.",
         "Notes in patient_XX.txt are fictional. Do not treat them as the original patients.",
@@ -268,10 +269,11 @@ def generate_all_cases(overwrite=False):
     list[dict]
         Metadata for each case.
     """
+    os.makedirs(SAMPLE_DIR, exist_ok=True)
     cases = []
     for case_id in range(1, NUM_CASES + 1):
         image_path = _download_image(case_id, overwrite=overwrite)
-        text_path = os.path.join(ROOT, "patient_{:02d}.txt".format(case_id))
+        text_path = os.path.join(SAMPLE_DIR, "patient_{:02d}.txt".format(case_id))
         if overwrite or not os.path.exists(text_path):
             with open(text_path, "w", encoding="utf-8") as handle:
                 handle.write(prescription_text(case_id))
