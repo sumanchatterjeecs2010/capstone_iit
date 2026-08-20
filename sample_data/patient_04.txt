@@ -1,0 +1,13 @@
+PATIENT DETAILS / PRESCRIPTION (fictional teaching case)
+Case ID: patient_04
+Domain: pathology
+Age/Sex: 54-year-old female
+Chief complaint: Palpable right breast lump noticed 3 weeks ago.
+History: No prior breast cancer. Family history: mother with breast carcinoma at 62.
+Vitals: Stable. No fever.
+Exam: Firm 2 cm mass, upper outer quadrant, not fixed to chest wall.
+Current medicines: None.
+Requested study: Core-needle biopsy histopathology (H&E).
+Clinical question: Invasive ductal carcinoma versus other breast neoplasm.
+Plan requested: Correlate histology with the palpable mass and advise oncology pathway.
+Image source: public teaching histopathology slide (see IMAGE_SOURCES.txt).

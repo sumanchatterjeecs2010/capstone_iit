@@ -19,24 +19,21 @@ CONDITION_MAP = {
     "infiltrate": ("pulmonary infiltrate", "COND-INFILTRATE"),
     "heart failure": ("heart failure", "COND-HF"),
     "pulmonary edema": ("pulmonary edema", "COND-EDEMA"),
-    "melanoma": ("cutaneous melanoma", "COND-MELANOMA"),
-    "nevus": ("melanocytic nevus", "COND-NEVUS"),
     "stroke": ("acute stroke", "COND-STROKE"),
     "haemorrhage": ("intracranial hemorrhage", "COND-ICH"),
     "hemorrhage": ("intracranial hemorrhage", "COND-ICH"),
     "ischemia": ("cerebral ischemia", "COND-ISCHEMIA"),
     "ischaemia": ("cerebral ischemia", "COND-ISCHEMIA"),
-    "retinopathy": ("diabetic retinopathy", "COND-DR"),
-    "diabetic retinopathy": ("diabetic retinopathy", "COND-DR"),
+    "lymphoma": ("lymphoma", "COND-LYMPHOMA"),
+    "hodgkin": ("Hodgkin lymphoma", "COND-HODGKIN"),
+    "carcinoma": ("carcinoma", "COND-CARCINOMA"),
+    "ductal": ("invasive ductal carcinoma", "COND-IDC"),
     "fracture": ("bone fracture", "COND-FRACTURE"),
     "colles": ("distal radius fracture", "COND-DISTAL-RADIUS"),
 }
 
 MEDICATION_MAP = {
     "metformin": ("Metformin", "MED-METFORMIN"),
-    "insulin": ("Insulin", "MED-INSULIN"),
-    "ramipril": ("Ramipril", "MED-RAMIPRIL"),
-    "atorvastatin": ("Atorvastatin", "MED-ATORVASTATIN"),
     "amlodipine": ("Amlodipine", "MED-AMLODIPINE"),
 }
 
@@ -47,14 +44,12 @@ STUDY_MAP = {
     "ct brain": ("brain_ct", "IMG-CT-BRAIN", "radiology"),
     "brain ct": ("brain_ct", "IMG-CT-BRAIN", "radiology"),
     "non-contrast ct": ("brain_ct", "IMG-CT-BRAIN", "radiology"),
-    "fundus": ("fundus", "IMG-FUNDUS", "ophthalmology"),
     "wrist": ("bone_xray", "IMG-XR-EXTREMITY", "radiology"),
     "radiograph": ("radiograph", "IMG-XR", "radiology"),
     "histopath": ("pathology_slide", "IMG-PATH", "pathology"),
     "pathology": ("pathology_slide", "IMG-PATH", "pathology"),
     "biopsy": ("pathology_slide", "IMG-PATH", "pathology"),
-    "dermatolog": ("dermatology_photo", "IMG-DERM", "dermatology"),
-    "clinical photograph": ("dermatology_photo", "IMG-DERM", "dermatology"),
+    "h&e": ("pathology_slide", "IMG-PATH", "pathology"),
 }
 
 ENTITY_KEYS = (
@@ -111,7 +106,7 @@ def _lookup_terms(blob, table):
 
 
 def normalize_clinical_entities(extracted, note):
-    """Structure Llama entities and map terms to local educational codes."""
+    """Structure Llama entities and map terms to local clinical concept codes."""
     extracted = extracted or {}
     blob = " ".join(str(extracted.get(key) or "") for key in ENTITY_KEYS) + "\n" + (note or "")
     studies = _lookup_terms(blob, STUDY_MAP)

@@ -1,5 +1,6 @@
 PATIENT DETAILS / PRESCRIPTION (fictional teaching case)
 Case ID: patient_05
+Domain: radiology
 Age/Sex: 29-year-old male
 Chief complaint: Pain and swelling of the left wrist after a FOOSH fall.
 History: Fall on outstretched hand while cycling 3 hours ago. No numbness.

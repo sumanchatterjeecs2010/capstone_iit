@@ -1,5 +1,6 @@
 PATIENT DETAILS / PRESCRIPTION (fictional teaching case)
 Case ID: patient_01
+Domain: radiology
 Age/Sex: 62-year-old male
 Chief complaint: Productive cough, fever 38.6 C, and dyspnoea for 4 days.
 History: Type 2 diabetes mellitus, former smoker (20 pack-years).

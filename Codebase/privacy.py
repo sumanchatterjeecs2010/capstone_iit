@@ -36,7 +36,7 @@ def deidentify_text(text):
     return cleaned.strip(), {
         "n_redactions": int(sum(by_type.values())),
         "by_type": by_type,
-        "method": "regex HIPAA-inspired educational scrubber",
+        "method": "regex HIPAA-inspired privacy scrubber",
         "stored_original": False,
     }
 

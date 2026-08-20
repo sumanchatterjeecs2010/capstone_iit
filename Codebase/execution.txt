@@ -1,30 +1,135 @@
-python main.py
-
-# Default: clinician dashboard + interactive chat (browser)
-#   Open http://127.0.0.1:8000/
-#   1. Upload note + image → MedGemma + Llama analyze the case
-#   2. Review triage, image findings, references in the dashboard
-#   3. Type follow-up questions in the chat panel (adaptive triage updates)
-
-# Optional: five built-in teaching cases (sample_data/)
-#   python main.py --batch
-
-# Defaults
-#   Vision LLM : medgemma:4b
-#   Text LLM   : llama3.2:3b
-# On a 4 GB RAM machine:
-#   python main.py --model llama3.2:1b --vision_model medgemma:4b
-
-# Prerequisites
-# 1. pip install -r requirements.txt
-# 2. Start Ollama
-# 3. ollama pull medgemma:4b
-# 4. ollama pull llama3.2:3b
-#    (or: ollama pull llama3.2:1b)
-# 5. python main.py
-#
-# One-off CLI upload (no browser)
-#   python main.py --text note.txt --image slide.jpg --image_domain pathology
-#
-# Privacy / NLP unit tests (no GPU)
-#   python test_ingestion.py
+Multimodal Medical Assistant — Execution Guide
+HPPCS[04] Capstone Submission
+========================================
+
+WHAT THIS PROJECT DOES
+----------------------
+Combines a radiology scan or histopathology slide with a clinical note to produce:
+  • Auto-detected domain (radiology or pathology)
+  • Triage, impression, findings, recommendations
+  • Guideline references and follow-up chat
+  • Label-free evaluation metrics (work on any upload)
+
+Runs on both CPU and GPU without code changes:
+  • 16 GB RAM CPU laptop (default; MedGemma unloaded after vision)
+  • Local NVIDIA GPU (auto-detected) or Google Colab T4
+  • Compact models (MedGemma 4B + Llama 3.2 3B) for lower cost, energy, and data movement
+
+Two interfaces share the same backend:
+  Mode 1 — TUI (terminal, default)
+  Mode 2 — GUI (browser at http://127.0.0.1:8000/)
+
+
+PROJECT LAYOUT
+--------------
+capstone/
+  Codebase/              Source code, requirements.txt, main.py, execution.txt
+  sample_data/           Optional demo note/image pairs (not required for evaluation)
+  Report/                Report.docx and Report.pdf
+  Run_on_Google_Colab.ipynb   Optional Colab notebook (GPU or CPU)
+
+
+ACCEPTED INPUT
+--------------
+  • Clinical note: .txt or .md (de-identified)
+  • Image: radiology (X-ray, CT, MRI) OR histopathology slide (.jpg, .png, .dcm)
+  • Domain is auto-detected — do not upload dermatology photos or clinical snapshots
+
+
+ONE-TIME SETUP
+--------------
+1. Install Python 3.10+.
+
+2. Open a terminal in the Codebase folder:
+        cd Codebase
+
+3. (Recommended) Create a virtual environment:
+        Windows:   python -m venv venv
+                   venv\Scripts\activate
+        Linux/Mac: python3 -m venv venv && source venv/bin/activate
+
+4. Install dependencies:
+        pip install -r requirements.txt
+
+5. Install Ollama from https://ollama.com and start the Ollama app/daemon.
+
+6. Pull models (first run may take several minutes):
+        ollama pull medgemma:4b
+        ollama pull llama3.2:3b
+   Low RAM fallback:
+        ollama pull llama3.2:1b
+        python main.py --model llama3.2:1b
+
+7. Verify Ollama is running:
+        ollama list
+
+
+CPU vs GPU (SEAMLESS)
+---------------------
+Default is auto-detect (uses NVIDIA GPU if nvidia-smi lists one; otherwise CPU):
+
+        python main.py
+        python main.py --device auto
+
+Force CPU (16 GB laptop / Colab CPU):
+
+        python main.py --device cpu
+
+Force GPU (local CUDA or Colab T4):
+
+        python main.py --device gpu
+
+On CPU the vision model is unloaded after analysis so Llama can use RAM.
+On GPU the same unload frees VRAM for chat; keep-alive is longer for Llama.
+Google Colab: open Run_on_Google_Colab.ipynb, attach T4 GPU (or CPU), follow the notebook.
+
+
+RUN — MODE 1 (TUI, TERMINAL) — RECOMMENDED FOR DEMO
+---------------------------------------------------
+From Codebase/:
+
+        python main.py
+
+When prompted, press Enter for Mode 1, or run directly:
+
+        python main.py --tui
+
+Steps:
+  1. Enter path to clinical note (.txt/.md)
+  2. Enter path to radiology or pathology image (.jpg/.png/.dcm)
+  3. Wait for analysis (several minutes on CPU; faster on GPU)
+  4. Review triage, findings, references, and Evaluation metrics
+  5. Ask follow-up questions at the You> prompt
+  6. Type quit or exit when finished
+
+Example paths (optional demo files):
+        Clinical note:  ..\sample_data\patient_01.txt
+        Image:          ..\sample_data\patient_01.jpg
+
+Evaluation metrics shown after each run (label-free; work on any file):
+  • Cross-modal correlation
+  • Robustness to data variation
+  • Explanation quality
+  • User satisfaction (interface and explanations, 1–5 Likert proxies)
+
+
+RUN — MODE 2 (GUI, BROWSER)
+---------------------------
+From Codebase/:
+
+        python main.py --gui
+
+Steps:
+  1. Open http://127.0.0.1:8000/ in your browser
+  2. Upload note + image; click "Analyze with MedGemma + Llama"
+  3. Review dashboard, chat, and Evaluation panel
+  4. Stop the server with Ctrl+C in the terminal
+
+
+TROUBLESHOOTING
+---------------
+  • "Ollama not reachable" — start the Ollama app; check ollama list
+  • "Model not installed" — ollama pull medgemma:4b and ollama pull llama3.2:3b
+  • Slow on CPU — expected for MedGemma vision; use Colab GPU if needed
+  • --device gpu but falls back to CPU — no NVIDIA GPU detected
+  • Code changes not visible — restart python main.py (Ctrl+C, then rerun)

@@ -1,129 +1,66 @@
 """
 dataset_builder.py
 ------------------
-Five public teaching images plus fictional, de-identified notes.
-
-Images are downloaded from Wikimedia Commons / NIH public collections.
-They are real clinical photographs and radiographs published for education.
-The accompanying notes are invented teaching cases (not real patient records).
-
-No OpenCV or Pillow is used.
+Five public teaching images (radiology + pathology) plus fictional notes.
 """
 
 import os
 
 import requests
 
-
-ROOT = os.path.dirname(os.path.abspath(__file__))
-SAMPLE_DIR = os.path.join(ROOT, "sample_data")
+from paths import SAMPLE_DIR
 NUM_CASES = 5
 
 USER_AGENT = (
     "HPPCS04-MultimodalAssistant/1.0 "
-    "(educational capstone; https://github.com/sumanchatterjeecs2010/capstone_iit)"
+    "(HPPCS04-MultimodalAssistant/1.0; capstone project)"
 )
 
-# Wikimedia Special:FilePath follows the current stored file.
 CASES = {
     1: {
         "filename": "X-ray_of_lobar_pneumonia.jpg",
         "dest": "patient_01.jpg",
         "license": "CC BY-SA 4.0",
         "credit": "Mikael Haggstrom, M.D., Wikimedia Commons, File:X-ray of lobar pneumonia.jpg",
+        "domain": "radiology",
+        "modality": "chest_xray",
     },
     2: {
-        "filename": "Melanoma.jpg",
+        "filename": "Nodular_lymphocyte_predominant_Hodgkin_lymphoma_-_high_mag.jpg",
         "dest": "patient_02.jpg",
-        "license": "Public domain (NCI)",
-        "credit": "National Cancer Institute via Wikimedia Commons, File:Melanoma.jpg",
+        "license": "CC BY-SA 3.0",
+        "credit": "Nephron, Wikimedia Commons, File:Nodular lymphocyte predominant Hodgkin lymphoma - high mag.jpg",
+        "domain": "pathology",
+        "modality": "pathology_slide",
     },
     3: {
         "filename": "Intracerebral.jpg",
         "dest": "patient_03.jpg",
         "license": "CC BY-SA 3.0",
         "credit": "Lucien Monfils, Wikimedia Commons, File:Intracerebral.jpg",
+        "domain": "radiology",
+        "modality": "brain_ct",
     },
     4: {
-        "filename": "Fundus_retinopathy_EDA03.JPG",
+        "filename": "Breast_carcinoma_in_a_lymph_node.jpg",
         "dest": "patient_04.jpg",
-        "license": "Public domain (NIH/NEI)",
-        "credit": "National Eye Institute, NIH, Wikimedia Commons, File:Fundus retinopathy EDA03.JPG",
+        "license": "CC BY-SA 3.0",
+        "credit": "Nephron, Wikimedia Commons, File:Breast carcinoma in a lymph node.jpg",
+        "domain": "pathology",
+        "modality": "pathology_slide",
     },
     5: {
         "filename": "Collesfracture.jpg",
         "dest": "patient_05.jpg",
         "license": "CC BY-SA 3.0",
         "credit": "Wikimedia Commons, File:Collesfracture.jpg",
-    },
-}
-
-GROUND_TRUTH = {
-    1: {
-        "modality": "chest_xray",
-        "condition_keywords": [
-            "pneumonia",
-            "infiltrate",
-            "opacity",
-            "consolidation",
-            "respiratory",
-            "chest",
-        ],
-        "triage": "urgent",
-    },
-    2: {
-        "modality": "dermatology_photo",
-        "condition_keywords": [
-            "melanoma",
-            "lesion",
-            "pigmented",
-            "abcde",
-            "dermatology",
-            "biopsy",
-        ],
-        "triage": "soon",
-    },
-    3: {
-        "modality": "brain_ct",
-        "condition_keywords": [
-            "stroke",
-            "neurologic",
-            "hemorrhage",
-            "ischemia",
-            "brain",
-            "emergency",
-        ],
-        "triage": "emergency",
-    },
-    4: {
-        "modality": "fundus",
-        "condition_keywords": [
-            "retinopathy",
-            "diabetes",
-            "fundus",
-            "hemorrhage",
-            "ophthalmology",
-            "retina",
-        ],
-        "triage": "soon",
-    },
-    5: {
+        "domain": "radiology",
         "modality": "bone_xray",
-        "condition_keywords": [
-            "fracture",
-            "wrist",
-            "fall",
-            "orthopedic",
-            "immobil",
-            "bone",
-        ],
-        "triage": "urgent",
     },
 }
 
 
 def _case_paths(case_id):
-    """Return image and note paths for a case, finding the downloaded image file."""
     text_path = os.path.join(SAMPLE_DIR, "patient_{:02d}.txt".format(case_id))
     planned = os.path.join(SAMPLE_DIR, CASES[case_id]["dest"])
     if os.path.exists(planned):
@@ -136,20 +73,12 @@ def _case_paths(case_id):
 
 
 def _download_image(case_id, overwrite=False):
-    """Download one Wikimedia Commons file into Codebase/."""
     meta = CASES[case_id]
     dest = os.path.join(SAMPLE_DIR, meta["dest"])
     if os.path.exists(dest) and not overwrite:
         return dest
-    url = "https://commons.wikimedia.org/wiki/Special:FilePath/{}?width=768".format(
-        meta["filename"]
-    )
-    response = requests.get(
-        url,
-        headers={"User-Agent": USER_AGENT},
-        timeout=90,
-        allow_redirects=True,
-    )
+    url = "https://commons.wikimedia.org/wiki/Special:FilePath/{}?width=768".format(meta["filename"])
+    response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=90, allow_redirects=True)
     response.raise_for_status()
     content_type = (response.headers.get("Content-Type") or "").lower()
     if "html" in content_type or len(response.content) < 2000:
@@ -160,18 +89,17 @@ def _download_image(case_id, overwrite=False):
 
 
 def _write_sources():
-    """Write license credits next to the images."""
     path = os.path.join(SAMPLE_DIR, "IMAGE_SOURCES.txt")
     lines = [
-        "Public teaching images used by this project.",
-        "Notes in patient_XX.txt are fictional. Do not treat them as the original patients.",
+        "Public teaching images (radiology and pathology only).",
+        "Notes in patient_XX.txt are fictional.",
         "",
     ]
     for case_id in range(1, NUM_CASES + 1):
         meta = CASES[case_id]
         lines.append(
-            "patient_{:02d}: {} | {} | {}".format(
-                case_id, meta["filename"], meta["license"], meta["credit"]
+            "patient_{:02d} [{}]: {} | {} | {}".format(
+                case_id, meta["domain"], meta["filename"], meta["license"], meta["credit"]
             )
         )
     with open(path, "w", encoding="utf-8") as handle:
@@ -179,11 +107,11 @@ def _write_sources():
 
 
 def prescription_text(case_id):
-    """Return a fictional teaching note matched to the image modality."""
     notes = {
         1: (
             "PATIENT DETAILS / PRESCRIPTION (fictional teaching case)\n"
             "Case ID: patient_01\n"
+            "Domain: radiology\n"
             "Age/Sex: 62-year-old male\n"
             "Chief complaint: Productive cough, fever 38.6 C, and dyspnoea for 4 days.\n"
             "History: Type 2 diabetes mellitus, former smoker (20 pack-years).\n"
@@ -198,20 +126,22 @@ def prescription_text(case_id):
         2: (
             "PATIENT DETAILS / PRESCRIPTION (fictional teaching case)\n"
             "Case ID: patient_02\n"
-            "Age/Sex: 47-year-old female\n"
-            "Chief complaint: Changing dark mole on the left forearm for 3 months.\n"
-            "History: Fair skin, several sunburns in childhood, no prior skin cancer.\n"
-            "Exam: Asymmetric pigmented lesion ~9 mm, irregular border, colour variation.\n"
-            "ABCDE: Asymmetry yes; Border irregular; Colour mixed; Diameter >6 mm; Evolving yes.\n"
+            "Domain: pathology\n"
+            "Age/Sex: 24-year-old male\n"
+            "Chief complaint: Painless cervical lymphadenopathy for 6 weeks.\n"
+            "History: Night sweats, low-grade fever, 3 kg weight loss. No HIV.\n"
+            "Vitals: HR 88, T 37.8 C, BP 118/76, SpO2 98%.\n"
+            "Exam: Firm left cervical node 3 cm. No hepatosplenomegaly documented.\n"
             "Current medicines: None.\n"
-            "Requested study: Clinical photograph of the lesion.\n"
-            "Clinical question: Suspicious pigmented lesion. Need risk stratification.\n"
-            "Plan requested: Correlate image with history and recommend dermatology pathway.\n"
-            "Image source: public teaching photograph (see IMAGE_SOURCES.txt)."
+            "Requested study: Lymph-node histopathology (H&E).\n"
+            "Clinical question: Hodgkin lymphoma versus reactive lymphadenitis.\n"
+            "Plan requested: Correlate slide with B symptoms and advise next steps.\n"
+            "Image source: public teaching histopathology slide (see IMAGE_SOURCES.txt)."
         ),
         3: (
             "PATIENT DETAILS / PRESCRIPTION (fictional teaching case)\n"
             "Case ID: patient_03\n"
+            "Domain: radiology\n"
             "Age/Sex: 71-year-old male\n"
             "Chief complaint: Sudden right-sided weakness and speech difficulty for 40 minutes.\n"
             "History: Hypertension, atrial fibrillation (not on anticoagulation).\n"
@@ -226,20 +156,22 @@ def prescription_text(case_id):
         4: (
             "PATIENT DETAILS / PRESCRIPTION (fictional teaching case)\n"
             "Case ID: patient_04\n"
-            "Age/Sex: 58-year-old female\n"
-            "Chief complaint: Gradual blurring of vision in both eyes for 6 months.\n"
-            "History: Type 2 diabetes mellitus for 14 years, HbA1c 9.2%, hypertension.\n"
-            "Vitals: BP 152/90, BMI 31.\n"
-            "Exam: Reduced visual acuity 6/18 both eyes. No pain or flashing lights.\n"
-            "Current medicines: Insulin, ramipril, atorvastatin.\n"
-            "Requested study: Fundus photograph (left eye).\n"
-            "Clinical question: Diabetic retinopathy screening / grading support.\n"
-            "Plan requested: Correlate fundus appearance with diabetic history.\n"
-            "Image source: public teaching fundus photograph (see IMAGE_SOURCES.txt)."
+            "Domain: pathology\n"
+            "Age/Sex: 54-year-old female\n"
+            "Chief complaint: Palpable right breast lump noticed 3 weeks ago.\n"
+            "History: No prior breast cancer. Family history: mother with breast carcinoma at 62.\n"
+            "Vitals: Stable. No fever.\n"
+            "Exam: Firm 2 cm mass, upper outer quadrant, not fixed to chest wall.\n"
+            "Current medicines: None.\n"
+            "Requested study: Core-needle biopsy histopathology (H&E).\n"
+            "Clinical question: Invasive ductal carcinoma versus other breast neoplasm.\n"
+            "Plan requested: Correlate histology with the palpable mass and advise oncology pathway.\n"
+            "Image source: public teaching histopathology slide (see IMAGE_SOURCES.txt)."
         ),
         5: (
             "PATIENT DETAILS / PRESCRIPTION (fictional teaching case)\n"
             "Case ID: patient_05\n"
+            "Domain: radiology\n"
             "Age/Sex: 29-year-old male\n"
             "Chief complaint: Pain and swelling of the left wrist after a FOOSH fall.\n"
             "History: Fall on outstretched hand while cycling 3 hours ago. No numbness.\n"
@@ -256,19 +188,6 @@ def prescription_text(case_id):
 
 
 def generate_all_cases(overwrite=False):
-    """
-    Download public teaching images (if missing) and write fictional notes.
-
-    Parameters
-    ----------
-    overwrite : bool
-        If True, re-download images and rewrite notes.
-
-    Returns
-    -------
-    list[dict]
-        Metadata for each case.
-    """
     os.makedirs(SAMPLE_DIR, exist_ok=True)
     cases = []
     for case_id in range(1, NUM_CASES + 1):
@@ -282,7 +201,8 @@ def generate_all_cases(overwrite=False):
                 "case_id": case_id,
                 "image": os.path.basename(image_path),
                 "text": os.path.basename(text_path),
-                "modality": GROUND_TRUTH[case_id]["modality"],
+                "domain": CASES[case_id]["domain"],
+                "modality": CASES[case_id]["modality"],
                 "image_credit": CASES[case_id]["credit"],
             }
         )
@@ -291,7 +211,6 @@ def generate_all_cases(overwrite=False):
 
 
 def list_input_pairs():
-    """List the five input pairs that the assistant must process."""
     pairs = []
     for case_id in range(1, NUM_CASES + 1):
         image_path, text_path = _case_paths(case_id)

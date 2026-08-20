@@ -9,14 +9,13 @@ import os
 import time
 
 from clinical_references import attach_references
-from dataset_builder import GROUND_TRUTH
 from entity_normalizer import normalize_clinical_entities
-from graph_pipeline import DISCLAIMER, build_graph, follow_up_with_llama
-from ingestion import UPLOAD_ROOT, prepare_existing_paths
+from evaluation import evaluate_record
+from graph_pipeline import UnsupportedImageDomainError, build_graph, follow_up_with_llama
+from ingestion import IMAGE_DOMAINS, UPLOAD_ROOT, prepare_existing_paths
+from paths import SAMPLE_DIR
 
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-SAMPLE_DIR = os.path.join(ROOT, "sample_data")
 _GRAPH = None
 
 
@@ -32,7 +31,7 @@ def read_text(path):
         return handle.read().strip()
 
 
-def _resolve_inputs(text_path, image_path, image_domain):
+def _resolve_inputs(text_path, image_path):
     """Load note text; de-identify only when needed."""
     text_norm = os.path.normpath(text_path)
     image_norm = os.path.normpath(image_path)
@@ -51,7 +50,7 @@ def _resolve_inputs(text_path, image_path, image_domain):
             "image": {"path": image_path, "privacy": {"teaching_case": True}},
         }
 
-    ingested = prepare_existing_paths(text_path, image_path, image_domain=image_domain)
+    ingested = prepare_existing_paths(text_path, image_path)
     return (
         read_text(ingested["text"]["path"]),
         ingested["text"]["path"],
@@ -60,45 +59,31 @@ def _resolve_inputs(text_path, image_path, image_domain):
     )
 
 
-def evaluate_case(case_id, record):
-    truth = GROUND_TRUTH[case_id]
-    blob = json.dumps(record).lower()
-    keywords = truth["condition_keywords"]
-    hits = [kw for kw in keywords if kw.lower() in blob]
-    predicted = str(record.get("clinical_reasoning", {}).get("triage", "")).lower()
-    expected = truth["triage"].lower()
-    return {
-        "case_id": case_id,
-        "keyword_recall": round(len(hits) / float(len(keywords)), 3),
-        "keywords_found": hits,
-        "keywords_expected": keywords,
-        "triage_match": int(expected in predicted or predicted in expected),
-        "predicted_triage": predicted,
-        "expected_triage": expected,
-    }
-
-
-def process_case(client, vision_model, llama_model, case_id, image_path, text_path, image_domain="radiology"):
+def process_case(client, vision_model, llama_model, case_id, image_path, text_path):
     started = time.time()
-    note, safe_note_path, safe_image_path, ingested = _resolve_inputs(
-        text_path, image_path, image_domain
-    )
+    note, safe_note_path, safe_image_path, ingested = _resolve_inputs(text_path, image_path)
     state = get_graph(client).invoke(
         {
-            "case_id": case_id,
             "image_path": safe_image_path,
             "note": note,
             "vision_model": vision_model,
             "llama_model": llama_model,
         }
     )
+    visual = state.get("visual_analysis") or {}
+    detected_domain = state.get("image_domain") or visual.get("image_domain")
+    if detected_domain not in IMAGE_DOMAINS:
+        raise UnsupportedImageDomainError(
+            "This assistant accepts radiology scans and histopathology slides only."
+        )
     entities = state.get("extracted_entities") or {}
     record = {
         "case_id": "patient_{:02d}".format(case_id) if case_id else "upload",
         "input": {
             "image": os.path.basename(image_path),
             "prescription": os.path.basename(text_path),
-            "image_domain": image_domain,
+            "image_domain": detected_domain,
+            "domain_detection": "automatic",
             "deidentified_image": os.path.basename(safe_image_path),
             "deidentified_note": os.path.basename(safe_note_path),
         },
@@ -107,14 +92,15 @@ def process_case(client, vision_model, llama_model, case_id, image_path, text_pa
             "image": ingested["image"]["privacy"],
             "originals_stored": False,
         },
-        "visual_analysis": state.get("visual_analysis"),
+        "visual_analysis": visual,
         "extracted_entities": entities,
         "normalized_entities": normalize_clinical_entities(entities, note),
         "clinical_reasoning": state.get("clinical_reasoning"),
         "conversation": state.get("conversation"),
-        "references": attach_references(state),
+        "references": state.get("references") or attach_references(
+            state, client=client, llama_model=llama_model
+        ),
         "note_text": note,
-        "disclaimer": DISCLAIMER,
         "models": {
             "vision_llm": vision_model,
             "language_model": llama_model,
@@ -122,8 +108,7 @@ def process_case(client, vision_model, llama_model, case_id, image_path, text_pa
         },
         "elapsed_seconds": round(time.time() - started, 2),
     }
-    if case_id in GROUND_TRUTH:
-        record["evaluation"] = evaluate_case(case_id, record)
+    record["evaluation"] = evaluate_record(record)
     return record
 
 
@@ -163,6 +148,8 @@ def dashboard_payload(record, session_id):
     reasoning = record.get("clinical_reasoning") or {}
     return {
         "session_id": session_id,
+        "image_domain": (record.get("input") or {}).get("image_domain")
+        or (visual.get("image_domain")),
         "triage": reasoning.get("triage"),
         "triage_rationale": reasoning.get("triage_rationale"),
         "impression": reasoning.get("impression"),
@@ -175,7 +162,7 @@ def dashboard_payload(record, session_id):
         "references": record.get("references") or [],
         "follow_up_questions": reasoning.get("follow_up_questions") or [],
         "conversation": record.get("conversation") or [],
-        "disclaimer": record.get("disclaimer") or DISCLAIMER,
+        "evaluation": record.get("evaluation") or {},
         "image_url": "/session/{}/image".format(session_id),
     }
 
@@ -188,20 +175,13 @@ def process_follow_up(client, session_id, user_message, llama_model):
     result = follow_up_with_llama(record, user_message, client, llama_model)
     record["clinical_reasoning"] = result["updated_reasoning"]
     record["conversation"] = (record.get("conversation") or []) + result["conversation_append"]
-    record["references"] = attach_references(record)
+    record["references"] = result.get("references") or attach_references(
+        record, client=client, llama_model=llama_model
+    )
+    record["evaluation"] = evaluate_record(record)
     save_json(os.path.join(session_dir_from_id(session_id), "conversation.json"), record)
     payload = dashboard_payload(record, session_id)
     payload["latest_reply"] = result["assistant_reply"]
     return payload
 
 
-def aggregate_metrics(records):
-    evals = [item["evaluation"] for item in records]
-    n = max(len(evals), 1)
-    return {
-        "n_cases": len(evals),
-        "mean_keyword_recall": round(sum(item["keyword_recall"] for item in evals) / float(n), 3),
-        "triage_accuracy": round(sum(item["triage_match"] for item in evals) / float(n), 3),
-        "per_case": evals,
-        "note": "Keyword metrics on synthetic teaching cases only.",
-    }

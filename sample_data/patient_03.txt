@@ -1,5 +1,6 @@
 PATIENT DETAILS / PRESCRIPTION (fictional teaching case)
 Case ID: patient_03
+Domain: radiology
 Age/Sex: 71-year-old male
 Chief complaint: Sudden right-sided weakness and speech difficulty for 40 minutes.
 History: Hypertension, atrial fibrillation (not on anticoagulation).

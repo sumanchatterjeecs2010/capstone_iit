@@ -1,12 +1,4 @@
-"""
-ingestion.py
-------------
-Upload modules for medical text (notes, reports) and images
-(radiology, pathology, dermatology, ophthalmology).
-
-Every upload is de-identified before it is written to disk.
-Original bytes are not stored.
-"""
+"""Upload modules for clinical notes and radiology/pathology images."""
 
 import os
 import uuid
@@ -19,13 +11,7 @@ UPLOAD_ROOT = os.path.join(ROOT, "uploads", "processed")
 
 TEXT_EXTENSIONS = {".txt", ".md"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".dcm", ".dicom"}
-IMAGE_DOMAINS = {
-    "radiology",
-    "pathology",
-    "dermatology",
-    "ophthalmology",
-    "other",
-}
+IMAGE_DOMAINS = {"radiology", "pathology"}
 
 
 def _safe_stem(name):
@@ -76,29 +62,12 @@ def ingest_text(raw, filename, session_dir=None):
     }
 
 
-def ingest_image(raw, filename, image_domain="radiology", session_dir=None):
+def ingest_image(raw, filename, session_dir=None):
     """
     De-identify and store a medical image.
 
-    Parameters
-    ----------
-    raw : bytes
-        Uploaded image or DICOM bytes.
-    filename : str
-        Original filename.
-    image_domain : str
-        radiology | pathology | dermatology | ophthalmology | other
-    session_dir : str or None
-        Destination folder.
-
-    Returns
-    -------
-    dict
-        Paths and privacy audit.
+    Image domain (radiology vs pathology) is detected automatically during analysis.
     """
-    domain = (image_domain or "other").lower()
-    if domain not in IMAGE_DOMAINS:
-        raise RuntimeError("Unknown image domain '{}'. Choose: {}".format(domain, ", ".join(sorted(IMAGE_DOMAINS))))
     stem, ext = _safe_stem(filename)
     if ext not in IMAGE_EXTENSIONS:
         raise RuntimeError(
@@ -109,21 +78,21 @@ def ingest_image(raw, filename, image_domain="radiology", session_dir=None):
     dest = os.path.join(session_dir, stem + (ext if ext in {".jpg", ".jpeg", ".png"} else ".png"))
     audit = deidentify_image_bytes(raw, filename, dest)
     out_path = audit.get("output_path") or dest
-    audit["image_domain"] = domain
+    audit["image_domain"] = "auto"
     return {
         "kind": "image",
         "path": out_path,
-        "domain": domain,
+        "domain": None,
         "privacy": audit,
         "session_dir": session_dir,
     }
 
 
-def ingest_pair(text_raw, text_name, image_raw, image_name, image_domain="radiology"):
+def ingest_pair(text_raw, text_name, image_raw, image_name):
     """Ingest a note and an image into one de-identified session folder."""
     session_dir = os.path.join(UPLOAD_ROOT, uuid.uuid4().hex[:12])
     text_info = ingest_text(text_raw, text_name, session_dir=session_dir)
-    image_info = ingest_image(image_raw, image_name, image_domain=image_domain, session_dir=session_dir)
+    image_info = ingest_image(image_raw, image_name, session_dir=session_dir)
     return {
         "session_dir": session_dir,
         "text": text_info,
@@ -131,7 +100,7 @@ def ingest_pair(text_raw, text_name, image_raw, image_name, image_domain="radiol
     }
 
 
-def prepare_existing_paths(text_path, image_path, image_domain="radiology"):
+def prepare_existing_paths(text_path, image_path):
     """
     Run local files through the same de-identification gate used for uploads.
     """
@@ -144,5 +113,4 @@ def prepare_existing_paths(text_path, image_path, image_domain="radiology"):
         os.path.basename(text_path),
         image_raw,
         os.path.basename(image_path),
-        image_domain=image_domain,
     )

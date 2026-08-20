@@ -10,19 +10,30 @@ from typing import Any, Dict, List, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from clinical_references import attach_references, enrich_reply_with_citations, format_reference_block
 from ollama_client import extract_json
+from runtime_profile import get_profile
+
+
+class UnsupportedImageDomainError(ValueError):
+    """Raised when an uploaded image is not radiology or pathology."""
+
+
+RADIOLOGY_MODALITIES = {"chest_xray", "brain_ct", "bone_xray", "mri", "ct", "xray", "x-ray", "radiograph"}
+PATHOLOGY_MODALITIES = {"pathology_slide", "histopathology", "histology", "biopsy_slide"}
 
 
 class CaseState(TypedDict, total=False):
-    case_id: int
     image_path: str
     note: str
     vision_model: str
     llama_model: str
+    image_domain: str
     visual_analysis: Dict[str, Any]
     extracted_entities: Dict[str, Any]
     clinical_reasoning: Dict[str, Any]
     conversation: List[Dict[str, str]]
+    references: List[Dict[str, Any]]
 
 
 ENTITY_KEYS = (
@@ -38,25 +49,20 @@ ENTITY_KEYS = (
 ENTITY_KEYS_SHORT = ("age_sex", "chief_complaint", "vitals", "requested_study", "clinical_question")
 
 MEDGEMMA_SYSTEM = (
-    "You are a careful educational medical image assistant. "
+    "You are a specialist vision assistant for radiology imaging and histopathology. "
     "Use only what is visible in the image and written in the note. "
     "Output compact JSON only."
 )
 LLAMA_SYSTEM = (
-    "You are a careful medical documentation assistant. "
-    "Use only the supplied facts. Do not invent imaging signs. "
-    "Keep answers short. This is educational, not clinical advice."
+    "You are a clinical documentation and reasoning assistant for radiology and pathology. "
+    "Use only the supplied facts. Do not invent imaging or histology signs. "
+    "Write clear, structured, clinician-facing prose."
 )
 LLAMA_REASONING_SYSTEM = (
-    "You are a clinical reasoning assistant for a student project. "
+    "You are a clinical reasoning assistant for radiology and pathology workflows. "
     "Triage: emergency = stroke/airway/shock/bleeding; urgent = hypoxia/pneumonia/fracture; "
-    "soon = stable lesion/chronic eye disease; routine = none of these. "
+    "soon = stable histopathology without sepsis; routine = none of these. "
     "Output compact JSON only."
-)
-DISCLAIMER = (
-    "Educational prototype only. This assistant does not provide a medical "
-    "diagnosis and must not be used for real clinical decisions. A licensed "
-    "clinician should review all findings."
 )
 
 
@@ -76,15 +82,50 @@ def build_facts(visual, entities, reasoning, max_findings=6):
     }
 
 
-def analyze_with_medgemma(state, client):
-    """MedGemma inspects the image and note."""
-    prompt = (
-        "Look at this medical teaching image and the patient note. "
-        "Return JSON only with keys: inferred_modality, image_description, "
-        "visual_findings, image_note_correlation, likely_conditions, uncertainties, "
-        "image_is_synthetic_or_schematic.\n\nNOTE:\n{}".format(state["note"])
+def resolve_detected_domain(visual):
+    """Map MedGemma output to radiology or pathology; reject other domains."""
+    domain = str(visual.get("image_domain") or "").lower().strip()
+    modality = str(visual.get("inferred_modality") or "").lower().strip()
+    description = str(visual.get("image_description") or "").lower()
+
+    if domain in {"radiology", "pathology"}:
+        return domain
+    if domain == "unsupported":
+        raise UnsupportedImageDomainError(
+            "This assistant accepts radiology scans and histopathology slides only. "
+            "The uploaded image does not appear to belong to either domain."
+        )
+    if modality in PATHOLOGY_MODALITIES or "pathology" in modality or "histolog" in modality:
+        return "pathology"
+    if modality in RADIOLOGY_MODALITIES or any(
+        token in modality for token in ("xray", "x-ray", "radiograph", "_ct", " mri")
+    ):
+        return "radiology"
+    if any(token in description for token in ("histopathology", "h&e", "microscope slide", "biopsy slide")):
+        return "pathology"
+    if any(token in description for token in ("x-ray", "xray", "radiograph", " ct ", " mri ", "chest film")):
+        return "radiology"
+    raise UnsupportedImageDomainError(
+        "Could not classify the image as radiology or pathology. "
+        "Upload a radiology scan (X-ray, CT, MRI) or a histopathology slide only."
     )
-    print("  MedGemma: reading image + note...", flush=True)
+
+
+def analyze_with_medgemma(state, client):
+    """MedGemma classifies the image domain and inspects the image and note."""
+    prompt = (
+        "This clinical case contains one image plus a patient note. "
+        "The system accepts only radiology scans or histopathology slides. "
+        "Return JSON only with keys: "
+        "image_domain (radiology|pathology|unsupported), "
+        "inferred_modality (chest_xray|brain_ct|bone_xray|mri|pathology_slide|unknown), "
+        "image_description, visual_findings, image_note_correlation, likely_conditions, "
+        "uncertainties, image_is_synthetic_or_schematic. "
+        "Set image_domain to unsupported for dermatology, ophthalmology, ultrasound-only, "
+        "clinical photos, or any non-radiology/non-pathology image.\n\nNOTE:\n{}".format(state["note"])
+    )
+    print("  MedGemma: detecting domain + reading image...", flush=True)
+    profile = get_profile()
     raw = client.chat(
         model=state["vision_model"],
         prompt=prompt,
@@ -92,10 +133,14 @@ def analyze_with_medgemma(state, client):
         images=[state["image_path"]],
         temperature=0.1,
         max_tokens=280,
-        keep_alive="15m",
+        keep_alive=profile.vision_keep_alive,
         json_mode=True,
     )
-    return {"visual_analysis": normalize_visual(extract_json(raw), state)}
+    visual = normalize_visual(extract_json(raw), state)
+    detected_domain = resolve_detected_domain(visual)
+    visual["image_domain"] = detected_domain
+    print("  Detected image domain:", detected_domain, flush=True)
+    return {"visual_analysis": visual, "image_domain": detected_domain}
 
 
 def extract_entities_with_llama(state, client):
@@ -112,7 +157,7 @@ def extract_entities_with_llama(state, client):
         system=LLAMA_SYSTEM,
         temperature=0.1,
         max_tokens=280,
-        keep_alive="5m",
+        keep_alive=get_profile().llama_keep_alive,
         json_mode=True,
     )
     return {"extracted_entities": normalize_entities(extract_json(raw), state["note"])}
@@ -139,10 +184,10 @@ def reason_with_llama(state, client):
         system=LLAMA_REASONING_SYSTEM,
         temperature=0.2,
         max_tokens=520,
-        keep_alive="5m",
+        keep_alive=get_profile().llama_keep_alive,
         json_mode=True,
     )
-    reasoning = normalize_reasoning(extract_json(raw), visual, state["note"], state["case_id"])
+    reasoning = normalize_reasoning(extract_json(raw), visual)
     conditions = visual.get("likely_conditions") or []
     if conditions and not reasoning.get("differential"):
         reasoning["differential"] = conditions[:4]
@@ -156,6 +201,7 @@ def converse_with_llama(state, client):
     entities = state.get("extracted_entities") or {}
     reasoning = state.get("clinical_reasoning") or {}
     facts = json.dumps(build_facts(visual, entities, reasoning), indent=2)
+    refs = attach_references(state, client=client, llama_model=state.get("llama_model"))
     print("  Llama: writing summary...", flush=True)
     summary = llama_turn(
         client,
@@ -166,7 +212,8 @@ def converse_with_llama(state, client):
             "(4) recommended next steps, (5) two brief follow-up questions."
         ),
         facts,
-        keep_alive="0",
+        keep_alive=get_profile().llama_keep_alive,
+        refs=refs,
     )
     return {
         "conversation": [
@@ -177,53 +224,138 @@ def converse_with_llama(state, client):
                 ),
             },
             {"role": "assistant", "content": summary},
-        ]
+        ],
+        "references": refs,
     }
 
 
-def llama_turn(client, model, instruction, context, keep_alive="5m"):
-    """Ask Llama for one clinician-facing reply."""
-    prompt = "{}\n\nFacts:\n{}\n\nWrite 120-180 words for a clinician.".format(instruction, context)
+def _chat_history(record, limit=6):
+    return "\n".join(
+        "{}: {}".format(turn.get("role", "user"), str(turn.get("content", ""))[:320])
+        for turn in (record.get("conversation") or [])[-limit:]
+    )
+
+
+def refresh_reasoning_after_follow_up(record, user_message, client, llama_model):
+    """Re-run Llama triage JSON using note, image evidence, and follow-up context."""
+    visual = record.get("visual_analysis") or {}
+    entities = record.get("extracted_entities") or {}
+    prior = record.get("clinical_reasoning") or {}
+    note = record.get("note_text") or ""
+    history = _chat_history(record)
+    combined_context = note
+    if history:
+        combined_context += "\n\nRECENT CHAT:\n" + history
+    combined_context += "\n\nCLINICIAN FOLLOW-UP:\n" + user_message.strip()
+
+    evidence = build_facts(visual, entities, prior, max_findings=8)
+    evidence["likely_conditions"] = (visual.get("likely_conditions") or [])[:6]
+    evidence["entities"] = {key: entities.get(key) for key in ENTITY_KEYS}
+    evidence["prior_reasoning"] = {
+        "impression": prior.get("impression"),
+        "differential": prior.get("differential"),
+        "triage": prior.get("triage"),
+        "recommendations": prior.get("recommendations"),
+    }
+    prompt = (
+        "Re-assess this clinical case after a clinician follow-up. Update impression, differential, "
+        "triage, recommendations, and suggest exactly two new adaptive follow-up questions "
+        "based on the latest chat. Return JSON only with keys: impression, differential, "
+        "triage (emergency|urgent|soon|routine), triage_rationale, recommendations, "
+        "follow_up_questions, image_text_correlation, safety_flags.\n\n"
+        "EVIDENCE:\n{}\n\nNOTE_AND_FOLLOWUP:\n{}\n"
+    ).format(json.dumps(evidence, indent=2), combined_context)
+    print("  Llama: re-triaging after follow-up...", flush=True)
+    raw = client.chat(
+        model=llama_model,
+        prompt=prompt,
+        system=LLAMA_REASONING_SYSTEM,
+        temperature=0.2,
+        max_tokens=520,
+        keep_alive=get_profile().llama_keep_alive,
+        json_mode=True,
+    )
+    reasoning = normalize_reasoning(extract_json(raw), visual)
+    conditions = visual.get("likely_conditions") or []
+    if conditions and not reasoning.get("differential"):
+        reasoning["differential"] = conditions[:4]
+    reasoning = calibrate_triage(reasoning, combined_context)
+    previous = str(prior.get("triage", "")).lower()
+    if str(reasoning.get("triage", "")).lower() != previous and previous:
+        reasoning["triage_rationale"] = (
+            str(reasoning.get("triage_rationale", "")) + " Updated after follow-up."
+        ).strip()
+    return reasoning
+
+
+def llama_turn(client, model, instruction, context, keep_alive=None, refs=None, word_range="120-180"):
+    """Ask Llama for one clinician-facing reply with optional inline citations."""
+    if keep_alive is None:
+        keep_alive = get_profile().llama_keep_alive
+    ref_block = format_reference_block(refs or [])
+    cite_note = (
+        " Use inline citations like [1] when referencing guideline facts from the list below."
+        if ref_block
+        else ""
+    )
+    prompt = (
+        "{}\n\nFacts:\n{}\n\n{}\n\nWrite {} words for a clinician.{}"
+    ).format(
+        instruction,
+        context,
+        ref_block,
+        word_range,
+        cite_note,
+    ).strip()
     text = client.chat(
         model=model,
         prompt=prompt,
         system=LLAMA_SYSTEM,
         temperature=0.3,
-        max_tokens=320,
+        max_tokens=380,
         keep_alive=keep_alive,
     )
-    if DISCLAIMER.split(".")[0] not in text:
-        text = text.strip() + " " + DISCLAIMER
-    return text.strip()
+    return enrich_reply_with_citations(text.strip(), refs or [])
 
 
 def follow_up_with_llama(record, user_message, client, llama_model):
-    """Answer one interactive follow-up and refresh triage if needed."""
+    """Answer follow-up, re-triage with Llama, refresh adaptive questions, cite evidence."""
     visual = record.get("visual_analysis") or {}
     entities = record.get("extracted_entities") or {}
-    reasoning = dict(record.get("clinical_reasoning") or {})
-    history = "\n".join(
-        "{}: {}".format(turn.get("role", "user"), str(turn.get("content", ""))[:400])
-        for turn in (record.get("conversation") or [])[-8:]
-    )
+    reasoning = refresh_reasoning_after_follow_up(record, user_message, client, llama_model)
+
+    draft_record = dict(record)
+    draft_record["clinical_reasoning"] = reasoning
+    refs = attach_references(draft_record, client=client, llama_model=llama_model)
+
+    history = _chat_history(record, limit=6)
     facts = json.dumps(build_facts(visual, entities, reasoning, max_findings=8), indent=2)
     print("  Llama: follow-up reply...", flush=True)
-    reply = llama_turn(
-        client,
-        llama_model,
-        "Answer the clinician follow-up using image findings and note context.",
-        facts + "\n\nPrior turns:\n" + history + "\n\nQuestion:\n" + user_message,
-        keep_alive="0",
+    ref_block = format_reference_block(refs)
+    cite_note = (
+        " Cite evidence inline as [1], [2] when discussing conditions or management."
+        if ref_block
+        else ""
     )
-    previous = str(reasoning.get("triage", "urgent")).lower()
-    reasoning = calibrate_triage(reasoning, (record.get("note_text") or "") + "\n" + user_message)
-    if str(reasoning.get("triage", previous)).lower() != previous:
-        reasoning["triage_rationale"] = (
-            str(reasoning.get("triage_rationale", "")) + " Updated after follow-up."
-        ).strip()
+    prompt = (
+        "Answer the clinician follow-up using image findings, updated triage, and note context. "
+        "Reference specific visual findings and note details.{}\n\n"
+        "Updated facts:\n{}\n\nPrior chat:\n{}\n\nQuestion:\n{}\n\n"
+        "Write 100-150 words for a clinician.\n\n{}"
+    ).format(cite_note, facts, history, user_message.strip(), ref_block)
+    reply = client.chat(
+        model=llama_model,
+        prompt=prompt,
+        system=LLAMA_SYSTEM,
+        temperature=0.3,
+        max_tokens=300,
+        keep_alive=get_profile().llama_keep_alive,
+    )
+    reply = enrich_reply_with_citations(reply.strip(), refs)
     return {
         "assistant_reply": reply,
         "updated_reasoning": reasoning,
+        "references": refs,
         "conversation_append": [
             {"role": "clinician", "content": user_message.strip()},
             {"role": "assistant", "content": reply},
@@ -235,6 +367,7 @@ def normalize_visual(parsed, state):
     """Ensure visual analysis has required keys."""
     base = {
         "file_name": basename(state["image_path"]),
+        "image_domain": "unknown",
         "inferred_modality": "unknown",
         "image_description": "Image description unavailable.",
         "visual_findings": ["See patient note."],
@@ -265,15 +398,12 @@ def normalize_entities(parsed, note):
     return base
 
 
-def normalize_reasoning(parsed, visual, note, case_id):
+def normalize_reasoning(parsed, visual):
     """Ensure reasoning record has required keys."""
-    from dataset_builder import GROUND_TRUTH
-
-    truth = GROUND_TRUTH.get(case_id, {})
     base = {
-        "impression": "Multimodal educational summary (not a diagnosis).",
-        "differential": (visual.get("likely_conditions") or truth.get("condition_keywords", []))[:4],
-        "triage": truth.get("triage", "urgent"),
+        "impression": "Multimodal clinical summary pending review.",
+        "differential": (visual.get("likely_conditions") or [])[:4],
+        "triage": "urgent",
         "triage_rationale": "Based on image findings and presenting complaint.",
         "recommendations": ["Clinician review of image and note."],
         "follow_up_questions": [
@@ -281,7 +411,7 @@ def normalize_reasoning(parsed, visual, note, case_id):
             "Any red-flag features (hypoxia, neurologic deficit, bleeding)?",
         ],
         "image_text_correlation": visual.get("image_note_correlation", ""),
-        "safety_flags": ["Educational prototype"],
+        "safety_flags": [],
     }
     if isinstance(parsed, dict):
         for key in base:
@@ -296,14 +426,12 @@ def calibrate_triage(reasoning, note):
     current = str(reasoning.get("triage", "urgent")).lower().strip()
     if any(cue in text for cue in ("hemiparesis", "aphasia", "speech difficulty", "sudden weakness")):
         suggested = "emergency"
-    elif any(cue in text for cue in ("mole", "abcde", "pigmented lesion")):
-        suggested = "soon"
-    elif any(cue in text for cue in ("blurring of vision", "fundus", "retinopathy", "hba1c")):
-        suggested = "soon"
     elif any(cue in text for cue in ("dyspnoea", "dyspnea", "spo2", "pneumonia", "fever")):
         suggested = "urgent"
     elif any(cue in text for cue in ("fracture", "foosh", "wrist")):
         suggested = "urgent"
+    elif any(cue in text for cue in ("lymphoma", "hodgkin", "carcinoma", "histology", "biopsy")):
+        suggested = "soon"
     else:
         suggested = current if current in {"emergency", "urgent", "soon", "routine"} else "urgent"
     reasoning = dict(reasoning)

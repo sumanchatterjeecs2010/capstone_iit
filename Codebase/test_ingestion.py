@@ -32,13 +32,13 @@ def test_upload_does_not_keep_original_phi():
     jpeg = b"\xff\xd8\xff\xe1\x00\x10EXIFdummy\xff\xd9"
     with tempfile.TemporaryDirectory() as tmp:
         os.chdir(os.path.dirname(__file__))
-        result = ingest_pair(note, "note.txt", jpeg, "skin.jpg", image_domain="pathology")
+        result = ingest_pair(note, "note.txt", jpeg, "skin.jpg")
         stored = open(result["text"]["path"], encoding="utf-8").read()
         assert "John Smith" not in stored
         assert "john@example.com" not in stored
         assert result["text"]["privacy"]["stored_original"] is False
         assert result["image"]["privacy"]["stored_original"] is False
-        assert result["image"]["domain"] == "pathology"
+        assert result["image"]["domain"] is None
 
 
 def test_entity_normalization():
@@ -67,7 +67,7 @@ def test_jpeg_exif_stripped():
 
 
 def test_clinical_references():
-    from clinical_references import attach_references
+    from clinical_references import _host_allowed, attach_references
 
     refs = attach_references(
         {
@@ -76,7 +76,57 @@ def test_clinical_references():
         }
     )
     assert refs
+    assert refs[0].get("cite_key") == "[1]"
     assert any("pneumonia" in ref["url"].lower() or "pneumonia" in ref["title"].lower() for ref in refs)
+    assert _host_allowed("https://www.who.int/news-room/fact-sheets/detail/pneumonia")
+    assert not _host_allowed("https://example.com/fake-guideline")
+
+
+def test_rejects_non_radiology_pathology_domain():
+    from graph_pipeline import UnsupportedImageDomainError, resolve_detected_domain
+
+    try:
+        resolve_detected_domain({"image_domain": "unsupported", "inferred_modality": "unknown"})
+        assert False, "unsupported domain should be rejected"
+    except UnsupportedImageDomainError as exc:
+        assert "radiology" in str(exc).lower()
+
+    assert resolve_detected_domain({"image_domain": "pathology", "inferred_modality": "pathology_slide"}) == "pathology"
+    assert resolve_detected_domain({"inferred_modality": "chest_xray"}) == "radiology"
+
+
+def test_evaluation_metrics_include_correlation_and_satisfaction():
+    from evaluation import evaluate_record, aggregate_metrics
+
+    record = {
+        "note_text": "pneumonia cough fever chest radiograph spo2 91",
+        "visual_analysis": {
+            "image_domain": "radiology",
+            "visual_findings": ["right lower lobe opacity", "chest consolidation"],
+            "image_description": "PA chest radiograph",
+            "image_note_correlation": "The radiograph shows consolidation consistent with the note describing pneumonia and hypoxia.",
+        },
+        "clinical_reasoning": {
+            "impression": "Community-acquired pneumonia",
+            "triage": "urgent",
+            "triage_rationale": "Hypoxia with radiographic consolidation.",
+            "recommendations": ["Oxygen", "Antibiotics"],
+            "follow_up_questions": ["Trend SpO2?"],
+            "differential": ["Pneumonia"],
+        },
+        "references": [{"title": "WHO pneumonia", "url": "https://www.who.int/"}],
+        "conversation": [{"role": "assistant", "content": "Summary"}],
+        "privacy": {"originals_stored": False},
+        "input": {"image_domain": "radiology"},
+    }
+    ev = evaluate_record(record)
+    assert ev["cross_modal_correlation"]["score"] > 0
+    assert ev["robustness_to_data_variation"]["score"] > 0
+    assert ev["explanation_quality"]["score"] > 0
+    assert ev["user_satisfaction"]["interface_likert_1_to_5"] >= 1
+    summary = aggregate_metrics([{"evaluation": ev}])
+    assert "cross_modal_correlation_score" in summary
+    assert "interface_likert_1_to_5" in summary["user_satisfaction"]
 
 
 def test_session_id_validation():
@@ -94,4 +144,6 @@ if __name__ == "__main__":
     test_jpeg_exif_stripped()
     test_clinical_references()
     test_session_id_validation()
+    test_rejects_non_radiology_pathology_domain()
+    test_evaluation_metrics_include_correlation_and_satisfaction()
     print("ingestion/privacy/normalization tests passed")

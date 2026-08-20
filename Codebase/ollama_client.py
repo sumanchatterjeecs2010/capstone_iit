@@ -4,16 +4,20 @@ ollama_client.py
 HTTP client for local Ollama models.
 
 MedGemma is called through /api/chat with an image. Llama 3.2 is called
-through the same chat API with text only. Models are unloaded after each
-call (keep_alive=0) so the two LLMs can share a machine with limited RAM.
+through the same chat API with text only. keep_alive and num_gpu options
+follow runtime_profile so the stack runs on CPU (16 GB laptop) or GPU
+(Colab / CUDA) without code changes.
 """
 
 import base64
 import json
+import os
 import re
 import time
 
 import requests
+
+from runtime_profile import get_profile
 
 
 class OllamaError(RuntimeError):
@@ -32,9 +36,22 @@ class OllamaClient:
         Per-request timeout in seconds.
     """
 
-    def __init__(self, host="http://127.0.0.1:11434", timeout=1800):
+    def __init__(self, host="http://127.0.0.1:11434", timeout=None):
         self.host = host.rstrip("/")
-        self.timeout = timeout
+        profile = get_profile()
+        self.timeout = int(timeout if timeout is not None else profile.request_timeout)
+        self.profile = profile
+
+    def _options(self, temperature, max_tokens):
+        options = {
+            "temperature": temperature,
+            "num_predict": max_tokens,
+        }
+        # Seamless CPU/GPU: force CPU layers when profile is CPU; otherwise Ollama
+        # offloads to CUDA automatically when a GPU is present.
+        if self.profile.device == "cpu":
+            options["num_gpu"] = 0
+        return options
 
     def is_available(self):
         """Return True if the Ollama daemon responds to /api/tags."""
@@ -87,7 +104,7 @@ class OllamaClient:
         images=None,
         temperature=0.2,
         max_tokens=400,
-        keep_alive="0",
+        keep_alive=None,
         json_mode=False,
     ):
         """
@@ -107,8 +124,8 @@ class OllamaClient:
             Decoding temperature.
         max_tokens : int
             Maximum generated tokens.
-        keep_alive : str or int
-            How long Ollama should keep weights loaded.
+        keep_alive : str or int or None
+            How long Ollama should keep weights loaded; None uses runtime_profile.
         json_mode : bool
             If True, request a JSON object from Ollama.
 
@@ -125,15 +142,16 @@ class OllamaClient:
                     encoded.append(base64.b64encode(handle.read()).decode("ascii"))
             message["images"] = encoded
 
+        if keep_alive is None:
+            keep_alive = (
+                self.profile.vision_keep_alive if images else self.profile.llama_keep_alive
+            )
         body = {
             "model": model,
             "messages": [message],
             "stream": False,
             "keep_alive": keep_alive,
-            "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens,
-            },
+            "options": self._options(temperature, max_tokens),
         }
         if system:
             body["messages"].insert(0, {"role": "system", "content": system})
@@ -159,6 +177,49 @@ class OllamaClient:
                 last_error = exc
                 time.sleep(1.5 * (attempt + 1))
         raise OllamaError("Ollama chat failed for model '{}': {}".format(model, last_error))
+
+    def chat_messages(
+        self,
+        model,
+        messages,
+        temperature=0.2,
+        max_tokens=400,
+        keep_alive=None,
+        tools=None,
+        json_mode=False,
+    ):
+        """Multi-turn chat; used for LangChain tool calling through Ollama."""
+        if keep_alive is None:
+            keep_alive = self.profile.llama_keep_alive
+        body = {
+            "model": model,
+            "messages": messages,
+            "stream": False,
+            "keep_alive": keep_alive,
+            "options": self._options(temperature, max_tokens),
+        }
+        if tools:
+            body["tools"] = tools
+        if json_mode:
+            body["format"] = "json"
+        response = requests.post(self.host + "/api/chat", json=body, timeout=self.timeout)
+        response.raise_for_status()
+        payload = response.json()
+        return payload.get("message") or {}
+
+    def unload_model(self, model):
+        """Free GPU/RAM by unloading an Ollama model (no-op if already unloaded)."""
+        body = {
+            "model": model,
+            "messages": [{"role": "user", "content": ""}],
+            "stream": False,
+            "keep_alive": 0,
+        }
+        try:
+            response = requests.post(self.host + "/api/chat", json=body, timeout=60)
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise OllamaError("Ollama unload failed for model '{}': {}".format(model, exc))
 
 
 def strip_thinking(text):

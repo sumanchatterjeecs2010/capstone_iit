@@ -6,13 +6,14 @@ Clinician dashboard: upload note + image, view findings, chat follow-ups.
 Served by `python main.py` (FastAPI + inline HTML/JS, Python stack only).
 """
 
+import asyncio
 import os
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from ingestion import IMAGE_DOMAINS, ingest_pair
+from ingestion import ingest_pair
 from medical_assistant import (
     dashboard_payload,
     get_graph,
@@ -22,6 +23,7 @@ from medical_assistant import (
     session_dir_from_id,
 )
 from ollama_client import OllamaClient, OllamaError
+from runtime_profile import get_profile
 
 
 app = FastAPI(title="Multimodal Medical Assistant", version="2.0")
@@ -51,6 +53,15 @@ def _vision_model():
 
 def _llama_model():
     return os.environ.get("LLAMA_MODEL", "llama3.2:3b")
+
+
+def _maybe_unload_vision(client):
+    if not get_profile().unload_vision_after_analysis:
+        return
+    try:
+        client.unload_model(_vision_model())
+    except OllamaError:
+        pass
 
 
 def _client():
@@ -107,6 +118,15 @@ HTML = r"""<!DOCTYPE html>
     }
     header h1 { margin: 0; font-size: 1.25rem; }
     header p { margin: 0.35rem 0 0; opacity: 0.9; font-size: 0.92rem; }
+    header .tagline { font-size: 0.82rem; opacity: 0.85; margin-top: 0.25rem; }
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.82rem;
+      padding: 1rem;
+      border-top: 1px solid var(--border);
+      margin-top: 1.5rem;
+    }
     main { max-width: 1200px; margin: 0 auto; padding: 1rem; }
     .card {
       background: var(--panel);
@@ -214,25 +234,18 @@ HTML = r"""<!DOCTYPE html>
 <body>
   <header>
     <h1>Multimodal Medical Assistant</h1>
-    <p>Upload a de-identified note and image, review findings, then ask follow-up questions.</p>
+    <p>Clinical decision support for radiology and pathology — image–text fusion, triage, and interactive follow-up.</p>
+    <p class="tagline">MedGemma 4B · Llama 3.2 · LangGraph · Auto domain detection · Evidence-linked responses</p>
   </header>
   <main>
     <section id="upload-panel" class="card">
       <h2 style="margin-top:0;font-size:1.05rem;">1. Upload case</h2>
-      <p class="note">Files are de-identified before storage or LLM use. Educational prototype only.</p>
+      <p class="note">Upload a de-identified clinical note and a radiology scan (X-ray, CT, MRI) or histopathology slide. Image domain is auto-detected. All files are privacy-scrubbed before analysis.</p>
       <form id="upload-form">
         <label>Clinical note (.txt / .md)</label>
         <input type="file" name="note" accept=".txt,.md,text/plain" required/>
-        <label>Medical image (.jpg / .png / .dcm)</label>
+        <label>Radiology or pathology image (.jpg / .png / .dcm)</label>
         <input type="file" name="image" accept=".jpg,.jpeg,.png,.dcm,.dicom,image/jpeg,image/png" required/>
-        <label>Image domain</label>
-        <select name="image_domain">
-          <option value="radiology">Radiology</option>
-          <option value="pathology">Pathology</option>
-          <option value="dermatology">Dermatology</option>
-          <option value="ophthalmology">Ophthalmology</option>
-          <option value="other">Other</option>
-        </select>
         <p style="margin-top:1rem;"><button type="submit" id="upload-btn">Analyze with MedGemma + Llama</button></p>
       </form>
       <p id="status"></p>
@@ -243,6 +256,7 @@ HTML = r"""<!DOCTYPE html>
         <aside>
           <div class="card">
             <h3 style="margin-top:0;">Image</h3>
+            <p id="domain-badge" style="font-size:0.82rem;color:var(--muted);margin:0 0 0.5rem 0;"></p>
             <img id="preview" alt="Uploaded medical image"/>
             <p id="image-desc" style="font-size:0.9rem;color:var(--muted);"></p>
           </div>
@@ -260,9 +274,17 @@ HTML = r"""<!DOCTYPE html>
             <p id="impression" style="font-size:0.92rem;"></p>
             <ul id="differential" class="compact"></ul>
           </div>
+          <div class="card">
+            <h3 style="margin-top:0;">Recommendations</h3>
+            <ul id="recommendations" class="compact"></ul>
+          </div>
           <div class="card refs">
             <h3 style="margin-top:0;">References</h3>
             <ul id="references" class="compact"></ul>
+          </div>
+          <div class="card">
+            <h3 style="margin-top:0;">Evaluation metrics</h3>
+            <ul id="metrics" class="compact"></ul>
           </div>
         </aside>
         <section class="card">
@@ -278,6 +300,9 @@ HTML = r"""<!DOCTYPE html>
       </div>
     </section>
   </main>
+  <footer>
+    Multimodal Clinical Assistant · Session data stored as conversation.json · Follow-up chat with dynamic re-triage
+  </footer>
   <script>
     let sessionId = null;
 
@@ -290,6 +315,11 @@ HTML = r"""<!DOCTYPE html>
       sessionId = data.session_id;
       document.getElementById("dashboard").style.display = "block";
       document.getElementById("preview").src = data.image_url + "?t=" + Date.now();
+      const domain = (data.image_domain || "unknown").toLowerCase();
+      document.getElementById("domain-badge").textContent =
+        domain === "unknown"
+          ? "Detected domain: pending"
+          : "Auto-detected domain: " + domain;
       document.getElementById("image-desc").textContent = data.image_description || "";
       const badge = document.getElementById("triage-badge");
       badge.textContent = data.triage || "—";
@@ -299,6 +329,8 @@ HTML = r"""<!DOCTYPE html>
       document.getElementById("correlation").textContent = data.image_note_correlation || "";
       fillList("findings", data.visual_findings || []);
       fillList("differential", data.differential || []);
+      const recList = document.getElementById("recommendations");
+      if (recList) fillList("recommendations", data.recommendations || []);
       const refs = document.getElementById("references");
       refs.innerHTML = "";
       (data.references || []).forEach(r => {
@@ -307,13 +339,22 @@ HTML = r"""<!DOCTYPE html>
         a.href = r.url;
         a.target = "_blank";
         a.rel = "noopener";
-        a.textContent = r.title;
+        a.textContent = (r.cite_key ? r.cite_key + " " : "") + r.title;
         li.appendChild(a);
         refs.appendChild(li);
       });
       if (!(data.references || []).length) {
         refs.innerHTML = "<li>No linked guidelines for this case.</li>";
       }
+      const ev = data.evaluation || {};
+      const sat = ev.user_satisfaction || {};
+      fillList("metrics", [
+        "Cross-modal correlation: " + ((ev.cross_modal_correlation || {}).score),
+        "Robustness to data variation: " + ((ev.robustness_to_data_variation || {}).score),
+        "Explanation quality: " + ((ev.explanation_quality || {}).score),
+        "User satisfaction (interface, 1–5): " + sat.interface_likert_1_to_5,
+        "User satisfaction (explanations, 1–5): " + sat.explanation_likert_1_to_5
+      ]);
       renderChat(data.conversation || []);
       renderChips(data.follow_up_questions || []);
     }
@@ -362,7 +403,16 @@ HTML = r"""<!DOCTYPE html>
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/\\n/g, "<br/>");
+        .replace(/\n/g, "<br/>");
+    }
+
+    function appendChatMessage(role, content) {
+      const chat = document.getElementById("chat");
+      const div = document.createElement("div");
+      div.className = "msg " + role;
+      div.innerHTML = "<div class=\"role\">" + role + "</div>" + escapeHtml(content || "");
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
     }
 
     document.getElementById("upload-form").addEventListener("submit", async (ev) => {
@@ -392,7 +442,10 @@ HTML = r"""<!DOCTYPE html>
       if (!message || !sessionId) return;
       const btn = document.getElementById("send-btn");
       btn.disabled = true;
-      document.getElementById("status").textContent = "Thinking…";
+      input.value = "";
+      appendChatMessage("clinician", message);
+        document.getElementById("status").textContent =
+        "Llama is re-triaging and replying (CPU or GPU via Ollama)…";
       try {
         const res = await fetch("/chat", {
           method: "POST",
@@ -402,7 +455,6 @@ HTML = r"""<!DOCTYPE html>
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || "Chat failed");
         renderDashboard(data);
-        input.value = "";
         document.getElementById("status").textContent = "Reply received.";
       } catch (err) {
         document.getElementById("status").textContent = "Error: " + err.message;
@@ -431,15 +483,12 @@ def home():
 async def ingest(
     note: UploadFile = File(...),
     image: UploadFile = File(...),
-    image_domain: str = Form("radiology"),
 ):
     """De-identify uploads, run the LangGraph pipeline, return dashboard JSON."""
-    if image_domain not in IMAGE_DOMAINS:
-        raise HTTPException(400, "Invalid image_domain")
     try:
         note_bytes, note_name = _read_upload(note)
         image_bytes, image_name = _read_upload(image)
-        ingested = ingest_pair(note_bytes, note_name, image_bytes, image_name, image_domain)
+        ingested = ingest_pair(note_bytes, note_name, image_bytes, image_name)
     except Exception as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -454,8 +503,9 @@ async def ingest(
             case_id=0,
             image_path=ingested["image"]["path"],
             text_path=ingested["text"]["path"],
-            image_domain=image_domain,
         )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     except OllamaError as exc:
         raise HTTPException(503, str(exc)) from exc
     except Exception as exc:
@@ -468,15 +518,22 @@ async def ingest(
     }
 
     save_json(os.path.join(ingested["session_dir"], "conversation.json"), record)
+    _maybe_unload_vision(client)
     payload = dashboard_payload(record, session_id)
     payload["status"] = "analyzed"
     return JSONResponse(payload)
 
 
+def _run_follow_up(session_id, message):
+    client = _client()
+    _maybe_unload_vision(client)
+    return process_follow_up(client, session_id, message, _llama_model())
+
+
 @app.post("/chat")
 async def chat(body: ChatRequest):
     try:
-        payload = process_follow_up(_client(), body.session_id, body.message, _llama_model())
+        payload = await asyncio.to_thread(_run_follow_up, body.session_id, body.message)
         payload["status"] = "ok"
         return JSONResponse(payload)
     except ValueError as exc:

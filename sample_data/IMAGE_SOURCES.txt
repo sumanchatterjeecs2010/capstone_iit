@@ -1,0 +1,8 @@
+Public teaching images (radiology and pathology only).
+Notes in patient_XX.txt are fictional.
+
+patient_01 [radiology]: X-ray_of_lobar_pneumonia.jpg | CC BY-SA 4.0 | Mikael Haggstrom, M.D., Wikimedia Commons, File:X-ray of lobar pneumonia.jpg
+patient_02 [pathology]: Nodular_lymphocyte_predominant_Hodgkin_lymphoma_-_high_mag.jpg | CC BY-SA 3.0 | Nephron, Wikimedia Commons, File:Nodular lymphocyte predominant Hodgkin lymphoma - high mag.jpg
+patient_03 [radiology]: Intracerebral.jpg | CC BY-SA 3.0 | Lucien Monfils, Wikimedia Commons, File:Intracerebral.jpg
+patient_04 [pathology]: Breast_carcinoma_in_a_lymph_node.jpg | CC BY-SA 3.0 | Nephron, Wikimedia Commons, File:Breast carcinoma in a lymph node.jpg
+patient_05 [radiology]: Collesfracture.jpg | CC BY-SA 3.0 | Wikimedia Commons, File:Collesfracture.jpg

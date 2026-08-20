@@ -1,0 +1,13 @@
+PATIENT DETAILS / PRESCRIPTION (fictional teaching case)
+Case ID: patient_02
+Domain: pathology
+Age/Sex: 24-year-old male
+Chief complaint: Painless cervical lymphadenopathy for 6 weeks.
+History: Night sweats, low-grade fever, 3 kg weight loss. No HIV.
+Vitals: HR 88, T 37.8 C, BP 118/76, SpO2 98%.
+Exam: Firm left cervical node 3 cm. No hepatosplenomegaly documented.
+Current medicines: None.
+Requested study: Lymph-node histopathology (H&E).
+Clinical question: Hodgkin lymphoma versus reactive lymphadenitis.
+Plan requested: Correlate slide with B symptoms and advise next steps.
+Image source: public teaching histopathology slide (see IMAGE_SOURCES.txt).

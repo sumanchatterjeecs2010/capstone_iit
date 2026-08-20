@@ -1,10 +1,12 @@
 """
 main.py
 -------
-Entry point. Default: clinician dashboard at http://127.0.0.1:8000/
+Entry point. Prompts for TUI (Mode 1) or GUI (Mode 2).
 
-    python main.py              # dashboard + chat
-    python main.py --batch      # optional 5-case demo in sample_data/
+    python main.py              # choose TUI or GUI
+    python main.py --tui        # terminal UI (Mode 1)
+    python main.py --gui        # browser dashboard (Mode 2)
+    python main.py --batch      # five teaching cases in ../sample_data/
     python main.py --text a.txt --image b.jpg
 """
 
@@ -14,13 +16,14 @@ import os
 import sys
 
 from dataset_builder import generate_all_cases, list_input_pairs
-from medical_assistant import aggregate_metrics, get_graph, process_case, save_json
+from evaluation import aggregate_metrics
+from medical_assistant import get_graph, process_case, save_json
 from ollama_client import OllamaClient, OllamaError
+from paths import SAMPLE_DIR, UPLOADS_DIR
+from runtime_profile import apply_ollama_env, describe_startup, get_profile
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-SAMPLE_DIR = os.path.join(ROOT, "sample_data")
-UPLOADS_DIR = os.path.join(ROOT, "uploads", "processed")
 VISION_ALIASES = ["medgemma:4b", "medgemma", "medgemma:latest", "medgemma:1.5"]
 
 
@@ -29,13 +32,20 @@ def parse_args(argv=None):
     parser.add_argument("--model", default="llama3.2:3b", help="Text LLM (default llama3.2:3b)")
     parser.add_argument("--vision_model", default="medgemma:4b", help="Vision LLM (default medgemma:4b)")
     parser.add_argument("--host", default="http://127.0.0.1:11434", help="Ollama URL")
+    parser.add_argument(
+        "--device",
+        default="auto",
+        choices=["auto", "cpu", "gpu"],
+        help="Compute device: auto (default), cpu, or gpu",
+    )
     parser.add_argument("--skip_dataset_build", action="store_true", help="Skip sample_data download")
     parser.add_argument("--batch", action="store_true", help="Run five teaching cases")
-    parser.add_argument("--serve", action="store_true", help="Start dashboard (default)")
+    parser.add_argument("--serve", action="store_true", help="Start browser dashboard (same as --gui)")
+    parser.add_argument("--gui", action="store_true", help="Browser dashboard (skip interface prompt)")
+    parser.add_argument("--tui", action="store_true", help="Terminal UI (skip interface prompt)")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--text", default="", help="CLI note path")
     parser.add_argument("--image", default="", help="CLI image path")
-    parser.add_argument("--image_domain", default="radiology")
     return parser.parse_args(argv)
 
 
@@ -67,12 +77,17 @@ def ensure_vision(client, model):
 
 
 def setup_models(args):
+    profile = get_profile(args.device)
+    apply_ollama_env(profile)
+    print(describe_startup(profile), flush=True)
+    if args.device == "gpu" and profile.device == "cpu":
+        print("No NVIDIA GPU detected; falling back to CPU.", flush=True)
     client = OllamaClient(host=args.host)
     if not client.is_available():
         raise OllamaError("Ollama not reachable at {}.".format(client.host))
     vision = ensure_vision(client, args.vision_model)
     llama = ensure_llama(client, args.model)
-    return client, vision, llama
+    return client, vision, llama, profile
 
 
 def run_single_upload(args, client, vision_model, llama_model):
@@ -80,7 +95,7 @@ def run_single_upload(args, client, vision_model, llama_model):
         print("Missing --text or --image.", file=sys.stderr)
         return 1
     record = process_case(
-        client, vision_model, llama_model, 0, args.image, args.text, args.image_domain
+        client, vision_model, llama_model, 0, args.image, args.text
     )
     os.makedirs(UPLOADS_DIR, exist_ok=True)
     out = os.path.join(UPLOADS_DIR, "conversation_upload.json")
@@ -95,10 +110,12 @@ def run_batch(args, client, vision_model, llama_model):
     records = []
     for case_id, image_path, text_path in list_input_pairs():
         if not os.path.exists(image_path) or not os.path.exists(text_path):
-            print("Missing sample_data case", case_id, file=sys.stderr)
+            print("Missing sample_data case", case_id, "(expected under ../sample_data/)", file=sys.stderr)
             return 1
         print("\n=== patient_{:02d} ===".format(case_id), flush=True)
-        record = process_case(client, vision_model, llama_model, case_id, image_path, text_path)
+        record = process_case(
+            client, vision_model, llama_model, case_id, image_path, text_path
+        )
         save_json(os.path.join(SAMPLE_DIR, "conversation_{:02d}.json".format(case_id)), record)
         records.append(record)
         print("Triage:", record["clinical_reasoning"].get("triage"), flush=True)
@@ -108,22 +125,56 @@ def run_batch(args, client, vision_model, llama_model):
     return 0
 
 
+def choose_interface(args):
+    """Ask the user to pick GUI (browser) or TUI (terminal)."""
+    if args.tui and (args.gui or args.serve):
+        raise ValueError("Use only one of --tui, --gui, or --serve.")
+    if args.tui:
+        return "tui"
+    if args.gui or args.serve:
+        return "gui"
+
+    print("\nMultimodal Medical Assistant", flush=True)
+    print("Choose interface:", flush=True)
+    print("  [1] TUI — Terminal interface (upload + chat in this window)", flush=True)
+    print("  [2] GUI — Browser dashboard at http://127.0.0.1:{}/".format(args.port), flush=True)
+    while True:
+        choice = input("Enter 1 or 2 [default 1]: ").strip().lower()
+        if choice in ("", "1", "tui", "t"):
+            return "tui"
+        if choice in ("2", "gui", "g"):
+            return "gui"
+        print("Invalid choice. Enter 1 for TUI or 2 for GUI.", flush=True)
+
+
 def run(args):
     os.chdir(ROOT)
-    use_dashboard = args.serve or (not args.batch and not (args.text and args.image))
+    use_dashboard = args.serve or args.gui or args.tui or (
+        not args.batch and not (args.text and args.image)
+    )
     if use_dashboard:
-        client, vision, llama = setup_models(args)
+        client, vision, llama, profile = setup_models(args)
         os.environ["OLLAMA_HOST"] = args.host
         os.environ["VISION_MODEL"] = vision
         os.environ["LLAMA_MODEL"] = llama
+        os.environ["ASSISTANT_DEVICE"] = profile.device
+        try:
+            mode = choose_interface(args)
+        except ValueError as exc:
+            print("ERROR:", exc, file=sys.stderr)
+            return 1
+        if mode == "tui":
+            from tui_app import run_tui
+
+            return run_tui(args, client, vision, llama)
         from upload_app import serve
 
         print("Open http://127.0.0.1:{}/".format(args.port), flush=True)
         serve(port=args.port)
         return 0
 
-    client, vision, llama = setup_models(args)
-    print("Vision:", vision, "| Language:", llama, flush=True)
+    client, vision, llama, profile = setup_models(args)
+    print("Vision:", vision, "| Language:", llama, "| Device:", profile.device, flush=True)
     get_graph(client)
     if args.text and args.image:
         return run_single_upload(args, client, vision, llama)
