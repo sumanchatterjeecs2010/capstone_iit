@@ -1,4 +1,4 @@
-"""Build Report.docx and Report.pdf using the Report1 sample heading format."""
+"""Build Report/Report.docx and Report/Report.pdf (run from project root)."""
 
 from pathlib import Path
 
@@ -8,7 +8,8 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
-from paths import REPORT_DIR
+# Script lives at project root; outputs go into Report/.
+REPORT_DIR = Path(__file__).resolve().parent / "Report"
 
 TITLE = "Multimodal Medical Assistant for Image-Text Clinical Triage"
 
@@ -166,7 +167,7 @@ def build_docx():
         doc,
         "Architecture (layers): Presentation (tui_app.py, upload_app.py) → Application "
         "(medical_assistant.py sessions) → Orchestration (graph_pipeline.py LangGraph) → Models "
-        "(ollama_client.py load/unload) → Data (ingestion.py, privacy.py, entity_normalizer.py, "
+        "(ollama_client.py load/unload) → Data (ingestion.py, privacy.py, "
         "clinical_references.py, evaluation.py). sample_data/ sits outside Codebase; live sessions "
         "are Codebase/uploads/processed/<id>/.",
     )
@@ -216,8 +217,8 @@ def build_docx():
     )
     _bullet(
         doc,
-        "Possible extensions: larger GPU serving when hardware allows, reader-study Likert "
-        "collection from clinicians, and SNOMED coding via entity_normalizer.py.",
+        "Possible extensions: larger GPU serving when hardware allows, and reader-study Likert "
+        "collection from clinicians.",
     )
 
     _heading(doc, "9. References")

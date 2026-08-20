@@ -25,7 +25,8 @@ PROJECT LAYOUT
 capstone/
   Codebase/              Source code, requirements.txt, main.py, execution.txt
   sample_data/           Optional demo note/image pairs (not required for evaluation)
-  Report/                Report.docx and Report.pdf
+  Report/                Report.docx and Report.pdf (outputs only)
+  build_report.py        Optional script to regenerate the report
   Run_on_Google_Colab.ipynb   Optional Colab notebook (GPU or CPU)
 
 
@@ -124,6 +125,16 @@ Steps:
   2. Upload note + image; click "Analyze with MedGemma + Llama"
   3. Review dashboard, chat, and Evaluation panel
   4. Stop the server with Ctrl+C in the terminal
+
+
+REGENERATE REPORT (OPTIONAL — SEPARATE FROM THE APP)
+----------------------------------------------------
+Report generation is not part of TUI/GUI. From the project root (capstone/):
+
+        pip install python-docx docx2pdf pywin32
+        python build_report.py
+
+Writes Report/Report.docx and Report/Report.pdf.
 
 
 TROUBLESHOOTING

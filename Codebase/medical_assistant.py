@@ -9,7 +9,6 @@ import os
 import time
 
 from clinical_references import attach_references
-from entity_normalizer import normalize_clinical_entities
 from evaluation import evaluate_record
 from graph_pipeline import UnsupportedImageDomainError, build_graph, follow_up_with_llama
 from ingestion import IMAGE_DOMAINS, UPLOAD_ROOT, prepare_existing_paths
@@ -94,7 +93,6 @@ def process_case(client, vision_model, llama_model, case_id, image_path, text_pa
         },
         "visual_analysis": visual,
         "extracted_entities": entities,
-        "normalized_entities": normalize_clinical_entities(entities, note),
         "clinical_reasoning": state.get("clinical_reasoning"),
         "conversation": state.get("conversation"),
         "references": state.get("references") or attach_references(
