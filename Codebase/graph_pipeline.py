@@ -1,22 +1,43 @@
 """
 graph_pipeline.py
 -----------------
-LangGraph: MedGemma (image+note) → Llama entities → Llama triage → Llama summary.
+LangGraph orchestration for one multimodal clinical case.
+
+Node sequence
+-------------
+1. ``medgemma_analyze`` — vision LLM: domain + image findings + image–note link
+2. ``llama_entities`` — text LLM: structured facts from the note
+3. ``llama_reason`` — text LLM: triage JSON (impression, differential, recommendations)
+4. ``llama_converse`` — text LLM: clinician-facing summary turn
+
+Follow-up chat (outside the compiled graph) uses ``follow_up_with_llama``, which
+re-triages and appends conversation turns.
+
+Reuse
+-----
+::
+
+    from graph_pipeline import build_graph, follow_up_with_llama
+    graph = build_graph(ollama_client)
+    state = graph.invoke({
+        "image_path": "...", "note": "...",
+        "vision_model": "medgemma:4b", "llama_model": "llama3.2:3b",
+    })
 """
 
 import json
+import re
 from os.path import basename
 from typing import Any, Dict, List, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from clinical_references import attach_references, enrich_reply_with_citations, format_reference_block
 from ollama_client import extract_json
 from runtime_profile import get_profile
 
 
 class UnsupportedImageDomainError(ValueError):
-    """Raised when an uploaded image is not radiology or pathology."""
+    """Raised when an image is not radiology or pathology."""
 
 
 RADIOLOGY_MODALITIES = {"chest_xray", "brain_ct", "bone_xray", "mri", "ct", "xray", "x-ray", "radiograph"}
@@ -24,6 +45,8 @@ PATHOLOGY_MODALITIES = {"pathology_slide", "histopathology", "histology", "biops
 
 
 class CaseState(TypedDict, total=False):
+    """Shared LangGraph state keys passed between nodes."""
+
     image_path: str
     note: str
     vision_model: str
@@ -33,7 +56,6 @@ class CaseState(TypedDict, total=False):
     extracted_entities: Dict[str, Any]
     clinical_reasoning: Dict[str, Any]
     conversation: List[Dict[str, str]]
-    references: List[Dict[str, Any]]
 
 
 ENTITY_KEYS = (
@@ -196,12 +218,11 @@ def reason_with_llama(state, client):
 
 
 def converse_with_llama(state, client):
-    """One clinician-facing summary turn (follow-ups happen in the chat UI)."""
+    """Produce the initial clinician-facing summary (follow-ups use the TUI)."""
     visual = state.get("visual_analysis") or {}
     entities = state.get("extracted_entities") or {}
     reasoning = state.get("clinical_reasoning") or {}
     facts = json.dumps(build_facts(visual, entities, reasoning), indent=2)
-    refs = attach_references(state, client=client, llama_model=state.get("llama_model"))
     print("  Llama: writing summary...", flush=True)
     summary = llama_turn(
         client,
@@ -209,11 +230,11 @@ def converse_with_llama(state, client):
         (
             "Write one clinician-facing reply that covers: (1) patient presentation, "
             "(2) image findings correlated with the note, (3) triage category with rationale, "
-            "(4) recommended next steps, (5) two brief follow-up questions."
+            "(4) recommended next steps, (5) two brief follow-up questions. "
+            "Ground every claim in the supplied image findings and note facts."
         ),
         facts,
         keep_alive=get_profile().llama_keep_alive,
-        refs=refs,
     )
     return {
         "conversation": [
@@ -225,7 +246,6 @@ def converse_with_llama(state, client):
             },
             {"role": "assistant", "content": summary},
         ],
-        "references": refs,
     }
 
 
@@ -288,25 +308,14 @@ def refresh_reasoning_after_follow_up(record, user_message, client, llama_model)
     return reasoning
 
 
-def llama_turn(client, model, instruction, context, keep_alive=None, refs=None, word_range="120-180"):
-    """Ask Llama for one clinician-facing reply with optional inline citations."""
+def llama_turn(client, model, instruction, context, keep_alive=None, word_range="120-180"):
+    """Ask Llama for one clinician-facing reply grounded in case facts."""
     if keep_alive is None:
         keep_alive = get_profile().llama_keep_alive
-    ref_block = format_reference_block(refs or [])
-    cite_note = (
-        " Use inline citations like [1] when referencing guideline facts from the list below."
-        if ref_block
-        else ""
-    )
     prompt = (
-        "{}\n\nFacts:\n{}\n\n{}\n\nWrite {} words for a clinician.{}"
-    ).format(
-        instruction,
-        context,
-        ref_block,
-        word_range,
-        cite_note,
-    ).strip()
+        "{}\n\nFacts:\n{}\n\nWrite {} words for a clinician. "
+        "Cite image findings and note details explicitly; do not invent external sources."
+    ).format(instruction, context, word_range).strip()
     text = client.chat(
         model=model,
         prompt=prompt,
@@ -315,34 +324,24 @@ def llama_turn(client, model, instruction, context, keep_alive=None, refs=None, 
         max_tokens=380,
         keep_alive=keep_alive,
     )
-    return enrich_reply_with_citations(text.strip(), refs or [])
+    return text.strip()
 
 
 def follow_up_with_llama(record, user_message, client, llama_model):
-    """Answer follow-up, re-triage with Llama, refresh adaptive questions, cite evidence."""
+    """Answer follow-up and re-triage with Llama using image + note evidence."""
     visual = record.get("visual_analysis") or {}
     entities = record.get("extracted_entities") or {}
     reasoning = refresh_reasoning_after_follow_up(record, user_message, client, llama_model)
 
-    draft_record = dict(record)
-    draft_record["clinical_reasoning"] = reasoning
-    refs = attach_references(draft_record, client=client, llama_model=llama_model)
-
     history = _chat_history(record, limit=6)
     facts = json.dumps(build_facts(visual, entities, reasoning, max_findings=8), indent=2)
     print("  Llama: follow-up reply...", flush=True)
-    ref_block = format_reference_block(refs)
-    cite_note = (
-        " Cite evidence inline as [1], [2] when discussing conditions or management."
-        if ref_block
-        else ""
-    )
     prompt = (
         "Answer the clinician follow-up using image findings, updated triage, and note context. "
-        "Reference specific visual findings and note details.{}\n\n"
+        "Reference specific visual findings and note details.\n\n"
         "Updated facts:\n{}\n\nPrior chat:\n{}\n\nQuestion:\n{}\n\n"
-        "Write 100-150 words for a clinician.\n\n{}"
-    ).format(cite_note, facts, history, user_message.strip(), ref_block)
+        "Write 100-150 words for a clinician."
+    ).format(facts, history, user_message.strip())
     reply = client.chat(
         model=llama_model,
         prompt=prompt,
@@ -351,14 +350,12 @@ def follow_up_with_llama(record, user_message, client, llama_model):
         max_tokens=300,
         keep_alive=get_profile().llama_keep_alive,
     )
-    reply = enrich_reply_with_citations(reply.strip(), refs)
     return {
-        "assistant_reply": reply,
+        "assistant_reply": reply.strip(),
         "updated_reasoning": reasoning,
-        "references": refs,
         "conversation_append": [
             {"role": "clinician", "content": user_message.strip()},
-            {"role": "assistant", "content": reply},
+            {"role": "assistant", "content": reply.strip()},
         ],
     }
 
@@ -398,8 +395,24 @@ def normalize_entities(parsed, note):
     return base
 
 
+def _as_string_list(value, fallback=None):
+    """Coerce LLM list fields that sometimes arrive as a plain string."""
+    if value is None or value == "":
+        return list(fallback or [])
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return list(fallback or [])
+        # Split multi-sentence blobs into bullet-sized lines when possible.
+        parts = [p.strip(" -•\t") for p in re.split(r"[\n;]+|(?<=\.)\s+(?=[A-Z])", text) if p.strip()]
+        return parts if parts else [text]
+    return [str(value)]
+
+
 def normalize_reasoning(parsed, visual):
-    """Ensure reasoning record has required keys."""
+    """Ensure reasoning record has required keys; list fields stay lists."""
     base = {
         "impression": "Multimodal clinical summary pending review.",
         "differential": (visual.get("likely_conditions") or [])[:4],
@@ -417,6 +430,13 @@ def normalize_reasoning(parsed, visual):
         for key in base:
             if parsed.get(key):
                 base[key] = parsed[key]
+    list_keys = ("differential", "recommendations", "follow_up_questions", "safety_flags")
+    for key in list_keys:
+        base[key] = _as_string_list(base.get(key), fallback=base.get(key) if isinstance(base.get(key), list) else None)
+    if not base["differential"]:
+        base["differential"] = _as_string_list(visual.get("likely_conditions"), fallback=[])[:4]
+    if not base["recommendations"]:
+        base["recommendations"] = ["Clinician review of image and note."]
     return base
 
 
@@ -440,7 +460,19 @@ def calibrate_triage(reasoning, note):
 
 
 def build_graph(client):
-    """Compile MedGemma → Llama LangGraph."""
+    """
+    Compile MedGemma → Llama entity → triage → summary as a LangGraph.
+
+    Parameters
+    ----------
+    client : OllamaClient
+        Shared HTTP client closed over by each node.
+
+    Returns
+    -------
+    CompiledStateGraph
+        Call ``.invoke(state_dict)`` with image_path, note, vision_model, llama_model.
+    """
     graph = StateGraph(CaseState)
     graph.add_node("medgemma_analyze", lambda state: analyze_with_medgemma(state, client))
     graph.add_node("llama_entities", lambda state: extract_entities_with_llama(state, client))

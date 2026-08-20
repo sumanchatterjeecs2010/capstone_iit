@@ -1,15 +1,23 @@
 """
 tui_app.py
 ----------
-Terminal UI for upload, analysis review, and follow-up chat.
+Optional terminal UI for reviewing a case and running follow-up chat.
+
+Invoked by ``python main.py --tui``. Uses the same pipeline and default
+``conversation.json`` path as the one-shot CLI.
+
+Public helpers
+--------------
+- ``render_record_summary(payload)`` — print triage / findings / metrics
+- ``run_tui(args, client, vision_model, llama_model)`` — full interactive session
 """
 
 import os
 import sys
 
-from ingestion import ingest_pair
 from medical_assistant import (
-    dashboard_payload,
+    default_conversation_path,
+    display_payload,
     get_graph,
     process_case,
     process_follow_up,
@@ -35,7 +43,7 @@ def _read_file(path):
     path = os.path.expanduser(path.strip().strip('"'))
     if not os.path.isfile(path):
         raise FileNotFoundError("File not found: {}".format(path))
-    return path
+    return os.path.abspath(path)
 
 
 def _section(title):
@@ -46,8 +54,15 @@ def _section(title):
 
 
 def _bullet_list(items):
-    for item in items or []:
-        print("  • {}".format(item))
+    """Print one bullet per item; a plain string is treated as a single bullet."""
+    if items is None or items == "":
+        return
+    if isinstance(items, str):
+        items = [items]
+    for item in items:
+        text = str(item).strip()
+        if text:
+            print("  • {}".format(text))
 
 
 def _wrap(text, width=72):
@@ -67,7 +82,8 @@ def _wrap(text, width=72):
         print(line)
 
 
-def _render_dashboard(payload):
+def render_record_summary(payload):
+    """Print triage, findings, correlation, conversation, and evaluation metrics."""
     domain = payload.get("image_domain") or "unknown"
     _section("AUTO-DETECTED DOMAIN: {}".format(domain.upper()))
     _section("TRIAGE: {}".format((payload.get("triage") or "—").upper()))
@@ -84,11 +100,6 @@ def _render_dashboard(payload):
     if correlation:
         _section("IMAGE–NOTE CORRELATION")
         _wrap(correlation)
-    refs = payload.get("references") or []
-    if refs:
-        _section("REFERENCES")
-        for ref in refs:
-            print("  • {} — {}".format(ref.get("title", "Link"), ref.get("url", "")))
     suggested = payload.get("follow_up_questions") or []
     if suggested:
         _section("SUGGESTED FOLLOW-UP QUESTIONS")
@@ -139,7 +150,9 @@ def _follow_up_hint():
     return "Llama is re-triaging and replying (may take 1–2 minutes on CPU)…"
 
 
-def _collect_case_paths():
+def _collect_case_paths(args):
+    if getattr(args, "text", None) and getattr(args, "image", None):
+        return _read_file(args.text), _read_file(args.image)
     _section("NEW CASE")
     print(DOMAIN_NOTICE)
     print()
@@ -148,79 +161,35 @@ def _collect_case_paths():
     return note_path, image_path
 
 
-def _ingest_paths(note_path, image_path):
-    with open(note_path, "rb") as handle:
-        note_bytes = handle.read()
-    with open(image_path, "rb") as handle:
-        image_bytes = handle.read()
-    return ingest_pair(
-        note_bytes,
-        os.path.basename(note_path),
-        image_bytes,
-        os.path.basename(image_path),
-    )
+def _resolve_output(args):
+    if getattr(args, "output", None):
+        return os.path.abspath(os.path.expanduser(args.output))
+    return default_conversation_path()
 
 
-def run_tui(_args, client, vision_model, llama_model):
-    """Interactive terminal session: upload, analyze, chat."""
-    print("\nMultimodal Medical Assistant — Terminal UI (TUI)")
-    print("Clinical decision support: radiology and pathology image–text analysis with follow-up chat.")
-    print(DOMAIN_NOTICE)
-    print()
+def run_follow_up_chat(client, vision_model, llama_model, conversation_path):
+    """
+    Interactive follow-up loop after an initial analysis.
 
-    get_graph(client)
-
-    try:
-        note_path, image_path = _collect_case_paths()
-        ingested = _ingest_paths(note_path, image_path)
-    except (FileNotFoundError, RuntimeError, ValueError) as exc:
-        print("ERROR:", exc, file=sys.stderr)
-        return 1
-
-    session_id = os.path.basename(ingested["session_dir"])
-    print("\nAnalyzing case (MedGemma detects domain, then Llama reasons).")
-    print(_wait_hint() + "\n")
-
-    try:
-        record = process_case(
-            client=client,
-            vision_model=vision_model,
-            llama_model=llama_model,
-            case_id=0,
-            image_path=ingested["image"]["path"],
-            text_path=ingested["text"]["path"],
-        )
-    except ValueError as exc:
-        print("ERROR:", exc, file=sys.stderr)
-        return 1
-    except OllamaError as exc:
-        print("ERROR:", exc, file=sys.stderr)
-        return 2
-
-    record["privacy"] = {
-        "text": ingested["text"]["privacy"],
-        "image": ingested["image"]["privacy"],
-        "originals_stored": False,
-    }
-    save_json(os.path.join(ingested["session_dir"], "conversation.json"), record)
+    Updates ``conversation_path`` after each turn. Type quit/exit/q to leave.
+    Returns 0 on normal exit, 2 on Ollama failure.
+    """
     _unload_vision(client, vision_model)
-
-    payload = dashboard_payload(record, session_id)
-    _render_dashboard(payload)
-    print("Session saved: {}".format(ingested["session_dir"]))
-
     print("\nFollow-up chat (type 'quit' or 'exit' to leave).")
+    print("Suggested questions above can be typed at the You> prompt.")
     while True:
         message = input("\nYou> ").strip()
         if not message:
             continue
         if message.lower() in {"quit", "exit", "q"}:
-            print("Leaving TUI. Goodbye.")
+            print("Leaving chat. Goodbye.")
             break
         print(_follow_up_hint())
         try:
             _unload_vision(client, vision_model)
-            payload = process_follow_up(client, session_id, message, llama_model)
+            payload = process_follow_up(
+                client, message, llama_model, conversation_path=conversation_path
+            )
         except (ValueError, FileNotFoundError) as exc:
             print("ERROR:", exc, file=sys.stderr)
             continue
@@ -245,5 +214,51 @@ def run_tui(_args, client, vision_model, llama_model):
         if suggested:
             _section("SUGGESTED NEXT QUESTIONS")
             _bullet_list(suggested)
-
     return 0
+
+
+def run_tui(args, client, vision_model, llama_model):
+    """
+    Interactive session: analyze a case, print the summary, then follow-up chat.
+
+    Writes/updates ``conversation.json`` after the initial run and after each turn.
+    Returns a process exit code (0 success, 1 input error, 2 Ollama error).
+    """
+    print("\nMultimodal Medical Assistant — Terminal UI (TUI)")
+    print("Clinical decision support: radiology and pathology image–text analysis with follow-up chat.")
+    print(DOMAIN_NOTICE)
+    print()
+
+    get_graph(client)
+    out_path = _resolve_output(args)
+
+    try:
+        note_path, image_path = _collect_case_paths(args)
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        print("ERROR:", exc, file=sys.stderr)
+        return 1
+
+    print("\nAnalyzing case (MedGemma detects domain, then Llama reasons).")
+    print(_wait_hint() + "\n")
+
+    try:
+        record = process_case(
+            client=client,
+            vision_model=vision_model,
+            llama_model=llama_model,
+            case_id=0,
+            image_path=image_path,
+            text_path=note_path,
+        )
+    except ValueError as exc:
+        print("ERROR:", exc, file=sys.stderr)
+        return 1
+    except OllamaError as exc:
+        print("ERROR:", exc, file=sys.stderr)
+        return 2
+
+    save_json(out_path, record)
+    payload = display_payload(record)
+    render_record_summary(payload)
+    print("Conversation saved: {}".format(out_path))
+    return run_follow_up_chat(client, vision_model, llama_model, out_path)

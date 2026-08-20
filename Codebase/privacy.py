@@ -1,4 +1,21 @@
-"""De-identify clinical text and strip image metadata before storage or LLM use."""
+"""
+privacy.py
+----------
+Lightweight de-identification before any model call.
+
+Text
+----
+Regex scrubber for emails, phones, MRNs, dates, labeled names/addresses, and
+ages over 89 (HIPAA-inspired; not a substitute for a full clinical PHI pipeline).
+
+Images
+------
+- JPEG: strip EXIF / APP / COM segments
+- PNG: drop textual metadata chunks
+- DICOM: clear common PHI tags and export a grayscale PNG for MedGemma
+
+Public entry points: ``deidentify_text``, ``deidentify_image_bytes``.
+"""
 
 import os
 import re

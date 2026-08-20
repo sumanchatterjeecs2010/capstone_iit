@@ -1,12 +1,32 @@
-"""Clinical evaluation metrics written into conversation.json and evaluation_summary.json.
+"""
+evaluation.py
+-------------
+Label-free quality metrics attached to every case record under ``evaluation``.
 
-All metrics are label-free so they work on any upload (including evaluator-provided samples).
+Why label-free
+--------------
+Faculty may supply arbitrary note/image pairs at demo time. Metrics therefore
+measure completeness and cross-modal coherence of *this* run, not accuracy
+against a fixed ground-truth diagnosis list.
+
+Scores (each 0–1 unless noted)
+------------------------------
+- ``cross_modal_correlation`` — image–note narrative present + token overlap
+- ``robustness_to_data_variation`` — domain detected, privacy flags, required fields
+- ``explanation_quality`` — checklist of clinical explanation fields (+ Likert 1–5)
+- ``user_satisfaction`` — interface completeness proxy (+ Likert 1–5)
+
+Reuse::
+
+    from evaluation import evaluate_record
+    record["evaluation"] = evaluate_record(record)
 """
 
 import re
 
 
 def cross_modal_correlation(record):
+    """Score how well visual findings align with the clinical note text."""
     visual = record.get("visual_analysis") or {}
     reasoning = record.get("clinical_reasoning") or {}
     note = str(record.get("note_text") or "").lower()
@@ -28,6 +48,7 @@ def cross_modal_correlation(record):
 
 
 def robustness_to_variation(record):
+    """Score domain detection, privacy posture, and required-field completeness."""
     visual = record.get("visual_analysis") or {}
     privacy = record.get("privacy") or {}
     detected = str(
@@ -53,6 +74,7 @@ def robustness_to_variation(record):
 
 
 def explanation_quality(record):
+    """Checklist over clinical explanation fields; also maps to a 1–5 Likert proxy."""
     reasoning = record.get("clinical_reasoning") or {}
     visual = record.get("visual_analysis") or {}
     checks = {
@@ -63,7 +85,6 @@ def explanation_quality(record):
             str(visual.get("image_note_correlation") or reasoning.get("image_text_correlation") or "").strip()
         ),
         "recommendations": bool(reasoning.get("recommendations")),
-        "references": bool(record.get("references")),
         "follow_up_questions": bool(reasoning.get("follow_up_questions")),
     }
     score = round(sum(1 for ok in checks.values() if ok) / float(len(checks)), 3)
@@ -71,6 +92,11 @@ def explanation_quality(record):
 
 
 def user_satisfaction(record):
+    """
+    Interface completeness proxy (findings, triage, chat, follow-up prompts).
+
+    Combined with explanation quality Likert scores for the evaluation panel.
+    """
     conversation = record.get("conversation") or []
     reasoning = record.get("clinical_reasoning") or {}
     interface_checks = {
@@ -79,7 +105,6 @@ def user_satisfaction(record):
         "triage_panel": bool(reasoning.get("triage")),
         "chat_transcript": bool(conversation),
         "follow_up_prompts": bool(reasoning.get("follow_up_questions")),
-        "guideline_links": bool(record.get("references")),
     }
     interface = round(sum(1 for ok in interface_checks.values() if ok) / float(len(interface_checks)), 3)
     explanation = explanation_quality(record)
@@ -89,45 +114,15 @@ def user_satisfaction(record):
         "explanation_score": explanation["score"],
         "explanation_likert_1_to_5": explanation["likert_1_to_5"],
         "interface_checklist": interface_checks,
-        "scale": "1–5 Likert proxy from completeness of interface and explanations on this case",
+        "scale": "1-5 Likert proxy from completeness of interface and explanations on this case",
     }
 
 
 def evaluate_record(record):
-    """Return label-free metrics for any upload."""
+    """Return the full label-free metrics block for embedding in a case record."""
     return {
         "cross_modal_correlation": cross_modal_correlation(record),
         "robustness_to_data_variation": robustness_to_variation(record),
         "explanation_quality": explanation_quality(record),
         "user_satisfaction": user_satisfaction(record),
-    }
-
-
-def aggregate_metrics(records):
-    evals = [item.get("evaluation") or evaluate_record(item) for item in records]
-
-    def mean(path):
-        values = []
-        for item in evals:
-            cursor = item
-            for key in path:
-                cursor = (cursor or {}).get(key)
-            if isinstance(cursor, (int, float)):
-                values.append(float(cursor))
-        return round(sum(values) / float(len(values) or 1), 3)
-
-    return {
-        "n_cases": len(evals),
-        "cross_modal_correlation_score": mean(["cross_modal_correlation", "score"]),
-        "robustness_score": mean(["robustness_to_data_variation", "score"]),
-        "explanation_quality_score": mean(["explanation_quality", "score"]),
-        "user_satisfaction": {
-            "interface_likert_1_to_5": mean(["user_satisfaction", "interface_likert_1_to_5"]),
-            "explanation_likert_1_to_5": mean(["user_satisfaction", "explanation_likert_1_to_5"]),
-        },
-        "per_case": evals,
-        "note": (
-            "Label-free metrics: cross-modal correlation, robustness, explanation quality, "
-            "and user-satisfaction Likert proxies."
-        ),
     }

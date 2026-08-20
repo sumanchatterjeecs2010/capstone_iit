@@ -1,8 +1,21 @@
-"""runtime_profile.py — Adaptive CPU/GPU settings for Ollama-backed inference.
+"""
+runtime_profile.py
+------------------
+Detect CPU vs NVIDIA GPU and tune Ollama keep-alive / unload policy.
 
-Ollama already uses a GPU when one is present. This module detects the host,
-tunes keep-alive / unload policy so MedGemma and Llama share memory safely on
-a 16 GB CPU laptop, and keeps models warmer on GPU (Colab T4 or local CUDA).
+Why this exists
+---------------
+MedGemma (vision) and Llama (text) both need memory. On a 16 GB CPU laptop the
+vision model is unloaded immediately after analysis; on GPU it is still unloaded
+to free VRAM before chat, but Llama stays warmer.
+
+Reuse
+-----
+::
+
+    from runtime_profile import get_profile, apply_ollama_env, describe_startup
+    profile = get_profile("auto")   # or "cpu" / "gpu"
+    apply_ollama_env(profile)
 """
 
 from __future__ import annotations
@@ -26,6 +39,7 @@ class RuntimeProfile:
 
     @property
     def is_gpu(self) -> bool:
+        """True when the active profile targets a CUDA GPU."""
         return self.device == "gpu"
 
 
@@ -67,6 +81,7 @@ def detect_device(preference="auto"):
 
 
 def build_profile(preference="auto") -> RuntimeProfile:
+    """Build keep-alive / timeout settings for the resolved device."""
     device = detect_device(preference)
     if device == "gpu":
         return RuntimeProfile(
@@ -112,6 +127,7 @@ def apply_ollama_env(profile: RuntimeProfile) -> None:
 
 
 def describe_startup(profile: RuntimeProfile) -> str:
+    """One-line summary printed at process start."""
     return (
         "Runtime: {} | vision keep_alive={} | llama keep_alive={} | "
         "unload vision after analysis={}"

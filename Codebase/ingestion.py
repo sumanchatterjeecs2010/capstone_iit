@@ -1,13 +1,28 @@
-"""Upload modules for clinical notes and radiology/pathology images."""
+"""
+ingestion.py
+------------
+Accept a clinical note and a radiology/pathology image, de-identify them, and
+place safe copies in an ephemeral work directory for model input.
+
+Supported extensions
+--------------------
+- Text: ``.txt``, ``.md``
+- Image: ``.jpg``, ``.jpeg``, ``.png``, ``.dcm`` / ``.dicom``
+
+Accepted clinical domains (enforced later by MedGemma): ``radiology``, ``pathology``.
+
+Reuse
+-----
+Prefer ``prepare_existing_paths(text_path, image_path)`` when you already have
+files on disk (CLI/TUI). Use ``ingest_pair`` when you hold raw bytes in memory.
+"""
 
 import os
+import tempfile
 import uuid
 
 from privacy import deidentify_image_bytes, deidentify_text
 
-
-ROOT = os.path.dirname(os.path.abspath(__file__))
-UPLOAD_ROOT = os.path.join(ROOT, "uploads", "processed")
 
 TEXT_EXTENSIONS = {".txt", ".md"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".dcm", ".dicom"}
@@ -15,29 +30,43 @@ IMAGE_DOMAINS = {"radiology", "pathology"}
 
 
 def _safe_stem(name):
+    """Sanitize a filename stem for safe use in a work directory."""
     base = os.path.basename(name or "upload")
     stem, ext = os.path.splitext(base)
     stem = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in stem)[:40] or "file"
     return stem, ext.lower()
 
 
+def _work_dir(session_dir=None):
+    """
+    Return an ephemeral workspace for de-identified files.
+
+    If *session_dir* is given it is created/reused; otherwise a unique temp dir
+    is allocated under the system temporary directory.
+    """
+    if session_dir:
+        os.makedirs(session_dir, exist_ok=True)
+        return session_dir
+    return tempfile.mkdtemp(prefix="mm_assist_{}_".format(uuid.uuid4().hex[:8]))
+
+
 def ingest_text(raw, filename, session_dir=None):
     """
-    De-identify and store a clinical note / report.
+    De-identify a clinical note and write it into the work folder.
 
     Parameters
     ----------
     raw : bytes or str
-        Uploaded text.
+        Note contents.
     filename : str
-        Original filename.
+        Original filename (used only for extension/stem).
     session_dir : str or None
-        Destination folder.
+        Shared work folder; created if omitted.
 
     Returns
     -------
     dict
-        Paths and privacy audit.
+        ``kind``, ``path``, ``privacy`` audit, ``session_dir``.
     """
     if isinstance(raw, bytes):
         text = raw.decode("utf-8", errors="replace")
@@ -46,8 +75,7 @@ def ingest_text(raw, filename, session_dir=None):
     stem, ext = _safe_stem(filename)
     if ext not in TEXT_EXTENSIONS and ext != "":
         raise RuntimeError("Unsupported text type '{}'. Use .txt or .md notes/reports.".format(ext))
-    session_dir = session_dir or os.path.join(UPLOAD_ROOT, uuid.uuid4().hex[:12])
-    os.makedirs(session_dir, exist_ok=True)
+    session_dir = _work_dir(session_dir)
     redacted, audit = deidentify_text(text)
     dest = os.path.join(session_dir, stem + ".txt")
     with open(dest, "w", encoding="utf-8") as handle:
@@ -64,17 +92,19 @@ def ingest_text(raw, filename, session_dir=None):
 
 def ingest_image(raw, filename, session_dir=None):
     """
-    De-identify and store a medical image.
+    De-identify a medical image (strip metadata / DICOM PHI) and write a safe copy.
 
-    Image domain (radiology vs pathology) is detected automatically during analysis.
+    Returns
+    -------
+    dict
+        ``kind``, ``path``, ``domain`` (None until MedGemma runs), ``privacy``, ``session_dir``.
     """
     stem, ext = _safe_stem(filename)
     if ext not in IMAGE_EXTENSIONS:
         raise RuntimeError(
             "Unsupported image type '{}'. Use JPEG/PNG (radiology or pathology) or DICOM.".format(ext)
         )
-    session_dir = session_dir or os.path.join(UPLOAD_ROOT, uuid.uuid4().hex[:12])
-    os.makedirs(session_dir, exist_ok=True)
+    session_dir = _work_dir(session_dir)
     dest = os.path.join(session_dir, stem + (ext if ext in {".jpg", ".jpeg", ".png"} else ".png"))
     audit = deidentify_image_bytes(raw, filename, dest)
     out_path = audit.get("output_path") or dest
@@ -89,8 +119,15 @@ def ingest_image(raw, filename, session_dir=None):
 
 
 def ingest_pair(text_raw, text_name, image_raw, image_name):
-    """Ingest a note and an image into one de-identified session folder."""
-    session_dir = os.path.join(UPLOAD_ROOT, uuid.uuid4().hex[:12])
+    """
+    Ingest a note and an image into one shared temporary work folder.
+
+    Returns
+    -------
+    dict
+        ``session_dir``, ``text`` (ingest_text result), ``image`` (ingest_image result).
+    """
+    session_dir = _work_dir()
     text_info = ingest_text(text_raw, text_name, session_dir=session_dir)
     image_info = ingest_image(image_raw, image_name, session_dir=session_dir)
     return {
@@ -102,7 +139,9 @@ def ingest_pair(text_raw, text_name, image_raw, image_name):
 
 def prepare_existing_paths(text_path, image_path):
     """
-    Run local files through the same de-identification gate used for uploads.
+    Load files from disk and run them through the same de-identification gate.
+
+    This is the helper used by ``medical_assistant.process_case``.
     """
     with open(text_path, "r", encoding="utf-8") as handle:
         text_raw = handle.read()

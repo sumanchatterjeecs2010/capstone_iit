@@ -1,12 +1,21 @@
 """
 ollama_client.py
 ----------------
-HTTP client for local Ollama models.
+HTTP client for a local Ollama server (MedGemma vision + Llama text).
 
-MedGemma is called through /api/chat with an image. Llama 3.2 is called
-through the same chat API with text only. keep_alive and num_gpu options
-follow runtime_profile so the stack runs on CPU (16 GB laptop) or GPU
-(Colab / CUDA) without code changes.
+- Vision calls: ``/api/chat`` with base64 ``images``
+- Text calls: same API without images
+- ``keep_alive`` / ``num_gpu`` follow ``runtime_profile`` so CPU and GPU hosts
+  share one code path
+
+Reuse
+-----
+::
+
+    from ollama_client import OllamaClient, extract_json
+    client = OllamaClient()
+    text = client.chat(model="llama3.2:3b", prompt="...", json_mode=True)
+    data = extract_json(text)
 """
 
 import base64
@@ -188,7 +197,7 @@ class OllamaClient:
         tools=None,
         json_mode=False,
     ):
-        """Multi-turn chat; used for LangChain tool calling through Ollama."""
+        """Multi-turn chat completion (optional tools / JSON format)."""
         if keep_alive is None:
             keep_alive = self.profile.llama_keep_alive
         body = {
